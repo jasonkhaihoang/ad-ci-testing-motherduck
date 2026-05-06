@@ -278,7 +278,6 @@ def insert_clone_cell(notebook: dict, params_idx: int) -> dict:
         "source": [
             "# Clone: Reset D and D+ to prod state\n",
             "# Re-run this cell at any time to reset between test iterations.\n",
-            "%pip install 'azure-core>=1.31.0' --quiet\n",
             "from dbt.adapters.fabricspark.notebook import run_dbt_job, DbtJobConfig, RepoConfig, ConnectionConfig\n",
             "\n",
             "clone_config = DbtJobConfig(\n",

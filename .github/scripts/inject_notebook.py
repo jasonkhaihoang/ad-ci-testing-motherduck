@@ -200,6 +200,8 @@ def substitute_parameters_cell(notebook: dict) -> dict:
     # Falls back to ./prod-state when unset OR empty (GitHub Actions outputs empty string for
     # unset step outputs, so we must guard against both cases).
     prod_state_abfss = os.environ.get("PROD_STATE_ABFSS", "").strip() or "./prod-state"
+    if prod_state_abfss.endswith("/manifest.json"):
+        prod_state_abfss = prod_state_abfss[:-len("/manifest.json")]
     # CI_TARGET is the dbt profile target name used by Slim CI Build/Test/Clone commands.
     # Sourced from ci-config.yml::ci_target via preflight output. Defaults to "ephemeral_ci"
     # when omitted; domain repos can override to match their own profiles.yml convention.
@@ -212,7 +214,8 @@ def substitute_parameters_cell(notebook: dict) -> dict:
         "# Parameters — injected by CI (do not edit manually)\n",
         f'prod_state_path = "{prod_state_abfss}"\n',
         f'ci_target = "{ci_target}"\n',
-        'command = ["dbt deps", f"dbt build --select state:modified+ --defer --state {prod_state_path} --target {ci_target}", f"dbt test --select state:modified+ --store-failures --target {ci_target}"]\n',
+        'build_command = ["dbt deps", f"dbt build --select state:modified+ --defer --state {prod_state_path} --target {ci_target}"]\n',
+        'test_command = [f"dbt test --select state:modified+ --store-failures --target {ci_target}"]\n',
         f'repo_url = "{repo_url}"\n',
         f'repo_branch = "{branch}"\n',
         f'github_app_id = "{github_app_id}"\n',
@@ -249,6 +252,51 @@ def substitute_parameters_cell(notebook: dict) -> dict:
         nb["cells"][params_cell_idx]["source"] = new_params
 
     return nb, params_cell_idx
+
+
+def insert_download_cell(notebook: dict, params_idx: int) -> tuple[dict, int]:
+    """Insert a download cell immediately after the Parameters cell.
+
+    The cell detects whether prod_state_path is an ABFSS URI at notebook runtime.
+    If so, it converts it to an HTTPS DFS URL, downloads manifest.json to
+    /tmp/prod-state/, and reassigns prod_state_path to that local directory.
+    If prod_state_path is already a local path (e.g. ./prod-state), the cell is
+    a no-op.
+
+    Returns (nb, params_idx + 1) so the caller can pass the updated index to
+    insert_clone_cell.
+    """
+    nb = copy.deepcopy(notebook)
+    insert_idx = params_idx + 1
+
+    download_cell = {
+        "cell_type": "code",
+        "source": [
+            "# Download prod-state manifest from OneLake (ABFSS → local path)\n",
+            "# No-op when prod_state_path is already a local path (e.g. greenfield ./prod-state).\n",
+            "if prod_state_path.startswith('abfss://'):\n",
+            "    import os, urllib.request\n",
+            "    # abfss://WORKSPACE_ID@onelake.dfs.fabric.microsoft.com/LAKEHOUSE_ID/...\n",
+            "    # → https://onelake.dfs.fabric.microsoft.com/WORKSPACE_ID/LAKEHOUSE_ID/...\n",
+            "    https_url = prod_state_path.replace('abfss://', 'https://onelake.dfs.fabric.microsoft.com/', 1)\n",
+            "    https_url = https_url.replace('@onelake.dfs.fabric.microsoft.com', '', 1)\n",
+            "    manifest_url = https_url.rstrip('/') + '/manifest.json'\n",
+            "    local_dir = '/tmp/prod-state'\n",
+            "    os.makedirs(local_dir, exist_ok=True)\n",
+            "    token = notebookutils.credentials.getToken('storage')\n",
+            "    req = urllib.request.Request(manifest_url, headers={'Authorization': f'Bearer {token}'})\n",
+            "    with urllib.request.urlopen(req) as resp:\n",
+            "        with open(f'{local_dir}/manifest.json', 'wb') as f:\n",
+            "            f.write(resp.read())\n",
+            "    prod_state_path = local_dir\n",
+        ],
+        "metadata": {"tags": ["ci-injected-download"]},
+        "outputs": [],
+        "execution_count": None,
+    }
+
+    nb["cells"].insert(insert_idx, download_cell)
+    return nb, insert_idx
 
 
 def insert_clone_cell(notebook: dict, params_idx: int) -> dict:
@@ -374,11 +422,15 @@ def main():
     notebook, params_idx = substitute_parameters_cell(notebook)
     print(f"Parameters cell substituted (cell index {params_idx}).", flush=True)
 
-    # Step 2: Insert Clone cell after Parameters cell
+    # Step 2: Insert download cell immediately after Parameters cell
+    notebook, params_idx = insert_download_cell(notebook, params_idx)
+    print("Download cell inserted.", flush=True)
+
+    # Step 3: Insert Clone cell after the download cell
     notebook = insert_clone_cell(notebook, params_idx)
     print("Clone cell inserted.", flush=True)
 
-    # Step 3: Upload to Fabric workspace
+    # Step 4: Upload to Fabric workspace
     display_name = os.path.splitext(os.path.basename(notebook_path))[0]
     upload_notebook(workspace_id, display_name, notebook, token)
 

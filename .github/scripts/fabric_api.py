@@ -190,6 +190,7 @@ def cmd_provision(args):
         lh = fabric_request("POST", f"/workspaces/{workspace_id}/items", token, {
             "displayName": lakehouse_name,
             "type": "Lakehouse",
+            "creationPayload": {"enableSchemas": True},
         })
         lakehouse_id = lh["id"]
         print(f"Lakehouse created: {lakehouse_id}", flush=True)

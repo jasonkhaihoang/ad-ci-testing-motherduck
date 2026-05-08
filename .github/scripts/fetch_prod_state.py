@@ -240,6 +240,20 @@ def fetch_greenfield() -> None:
         },
         "nodes": {},
         "sources": {},
+        "macros": {},
+        "docs": {},
+        "exposures": {},
+        "metrics": {},
+        "groups": {},
+        "selectors": {},
+        "disabled": {},
+        "parent_map": {},
+        "child_map": {},
+        "group_map": {},
+        "saved_queries": {},
+        "semantic_models": {},
+        "unit_tests": {},
+        "functions": {},
     }
     with open("prod-state/manifest.json", "w") as f:
         json.dump(minimal, f, indent=2)

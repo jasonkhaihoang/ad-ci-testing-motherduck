@@ -89,12 +89,15 @@ def map_gate_status(overall_status: str) -> str:
 
 
 def build_job_trigger_body(gate: str, ci_run_id: str, head_sha: str) -> dict:
-    """Build the Fabric Item Jobs API POST body for triggering a notebook run."""
+    """Build the Fabric Item Jobs API POST body for triggering a notebook run.
+
+    jobType must be a query parameter (?jobType=RunNotebook), not a body field.
+    The body contains only executionData.
+    """
     def _typed(value: str) -> dict:
         return {"value": str(value), "type": "string"}
 
     return {
-        "jobType": "RunNotebook",
         "executionData": {
             "parameters": {
                 "run_mode": _typed("ci"),
@@ -130,7 +133,7 @@ def _post_github_status(repo: str, sha: str, context: str, state: str, descripti
 
 def _trigger_notebook_job(workspace_id: str, notebook_id: str, body: dict, token: str) -> str:
     """POST to Item Jobs API; return the job instance ID."""
-    url = f"{FABRIC_API}/workspaces/{workspace_id}/items/{notebook_id}/jobs/instances"
+    url = f"{FABRIC_API}/workspaces/{workspace_id}/items/{notebook_id}/jobs/instances?jobType=RunNotebook"
     data = json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Authorization", f"Bearer {token}")
@@ -159,7 +162,7 @@ def _trigger_notebook_job(workspace_id: str, notebook_id: str, body: dict, token
 
 def _trigger_notebook_job_v2(workspace_id: str, notebook_id: str, body: dict, token: str) -> str:
     """POST to Item Jobs API; handle 202 Accepted with Location header."""
-    url = f"{FABRIC_API}/workspaces/{workspace_id}/items/{notebook_id}/jobs/instances"
+    url = f"{FABRIC_API}/workspaces/{workspace_id}/items/{notebook_id}/jobs/instances?jobType=RunNotebook"
     data = json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Authorization", f"Bearer {token}")

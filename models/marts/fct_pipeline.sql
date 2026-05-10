@@ -62,17 +62,17 @@ opportunity_metrics as (
         -- Calculated: Sales cycle duration (for closed opportunities)
         case
             when opp.is_closed = true and opp.close_date is not null
-            then datediff(day, opp.created_date, opp.close_date)
+            then {{ dbt.datediff("opp.created_date", "opp.close_date", "day") }}
             else null
         end as sales_cycle_days,
 
         -- Calculated: Age of opportunity
-        datediff(day, opp.created_date, current_date()) as opportunity_age_days,
+        {{ dbt.datediff("opp.created_date", "current_date()", "day") }} as opportunity_age_days,
 
         -- Calculated: Days in current stage (for open opportunities)
         case
             when opp.is_closed = false and opp.last_stage_change_date is not null
-            then datediff(day, opp.last_stage_change_date, current_date())
+            then {{ dbt.datediff("opp.last_stage_change_date", "current_date()", "day") }}
             else null
         end as days_in_current_stage,
 

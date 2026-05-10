@@ -240,6 +240,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP001
             account_id: ACC001
@@ -298,6 +333,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP002
             account_id: ACC002
@@ -356,6 +426,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP003
             account_id: ACC003
@@ -414,6 +519,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP004
             account_id: ACC004
@@ -472,6 +612,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP005
             account_id: ACC005
@@ -531,6 +706,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP006
             account_id: ACC006
@@ -588,6 +798,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP007
             account_id: ACC007
@@ -645,6 +890,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP008
             account_id: ACC008
@@ -703,6 +983,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP009
             account_id: ACC009
@@ -776,6 +1091,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP011
             account_id: ACC010
@@ -851,6 +1201,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP013
             account_id: null
@@ -899,6 +1284,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP014
             account_id: ACC011
@@ -956,6 +1376,41 @@ unit_tests:
     model: fct_pipeline
     given:
       - input: ref('stg_salescloud__opportunity')
+        columns:
+          - name: opportunity_id
+            data_type: string
+          - name: account_id
+            data_type: string
+          - name: owner_id
+            data_type: string
+          - name: opportunity_name
+            data_type: string
+          - name: stage_name
+            data_type: string
+          - name: opportunity_type
+            data_type: string
+          - name: lead_source
+            data_type: string
+          - name: amount
+            data_type: float
+          - name: probability
+            data_type: float
+          - name: expected_revenue
+            data_type: float
+          - name: created_date
+            data_type: timestamp
+          - name: close_date
+            data_type: date
+          - name: last_stage_change_date
+            data_type: date
+          - name: is_closed
+            data_type: boolean
+          - name: is_won
+            data_type: boolean
+          - name: last_modified_date
+            data_type: timestamp
+          - name: system_modified_timestamp
+            data_type: timestamp
         rows:
           - opportunity_id: OPP015
             account_id: ACC012

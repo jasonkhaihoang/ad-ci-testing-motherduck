@@ -35,10 +35,10 @@
             {%- endif -%}
           {%- endif -%}
         {%- endfor -%}
-        {#-- All-null column: fall back to the model's schema-yml data_type --#}
-        {%- if inferred.type == 'varchar' -%}
+        {#-- All-null column: fall back to the model's schema-yml data_type if graph is available --#}
+        {%- if inferred.type == 'varchar' and 'nodes' in graph -%}
           {%- set node_name = this.identifier | lower -%}
-          {%- for uid, node in graph.nodes.items() -%}
+          {%- for uid, node in graph['nodes'].items() -%}
             {%- if node['name'] | lower == node_name and node['resource_type'] in ('model', 'seed') -%}
               {%- if col_lower in node['columns'] and node['columns'][col_lower]['data_type'] -%}
                 {%- set inferred.type = node['columns'][col_lower]['data_type'] -%}
@@ -50,18 +50,20 @@
         {%- do column_name_to_quoted.update({col_lower: '"' ~ col_lower ~ '"'}) -%}
       {%- endfor -%}
     {%- else -%}
-      {#-- Empty rows: build schema entirely from the model's schema-yml definition --#}
-      {%- set node_name = this.identifier | lower -%}
-      {%- for uid, node in graph.nodes.items() -%}
-        {%- if node['name'] | lower == node_name and node['resource_type'] in ('model', 'seed') -%}
-          {%- for col_name, col_def in node['columns'].items() -%}
-            {%- set col_lower = col_name | lower -%}
-            {%- set dt = col_def['data_type'] if col_def['data_type'] else 'varchar' -%}
-            {%- do column_name_to_data_types.update({col_lower: dt}) -%}
-            {%- do column_name_to_quoted.update({col_lower: '"' ~ col_lower ~ '"'}) -%}
-          {%- endfor -%}
-        {%- endif -%}
-      {%- endfor -%}
+      {#-- Empty rows: build schema from graph if available --#}
+      {%- if 'nodes' in graph -%}
+        {%- set node_name = this.identifier | lower -%}
+        {%- for uid, node in graph['nodes'].items() -%}
+          {%- if node['name'] | lower == node_name and node['resource_type'] in ('model', 'seed') -%}
+            {%- for col_name, col_def in node['columns'].items() -%}
+              {%- set col_lower = col_name | lower -%}
+              {%- set dt = col_def['data_type'] if col_def['data_type'] else 'varchar' -%}
+              {%- do column_name_to_data_types.update({col_lower: dt}) -%}
+              {%- do column_name_to_quoted.update({col_lower: '"' ~ col_lower ~ '"'}) -%}
+            {%- endfor -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endif -%}
     {%- endif -%}
 
   {%- else -%}

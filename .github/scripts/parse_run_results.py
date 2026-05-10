@@ -34,7 +34,7 @@ def summarize(run_results: dict) -> dict:
     results = run_results.get("results") or []
     for r in results:
         status = r.get("status")
-        if status == "pass":
+        if status in ("pass", "success"):
             counts["pass"] += 1
         elif status == "fail":
             counts["fail"] += 1

@@ -378,12 +378,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-      - name: Derive write-side clone models
-        run: python3 $SCRIPTS/derive_clone_shortcuts.py --models-output clone_models.json
-        env:
-          PROD_WORKSPACE_ID: ${{ vars.PROD_WORKSPACE_ID }}
-          PROD_LAKEHOUSE_ID: ${{ vars.PROD_LAKEHOUSE_ID }}
-
       - name: Inject notebook into ephemeral workspace
         id: inject-notebook
         env:
@@ -400,8 +394,6 @@ jobs:
           GH_APP_PEM_KV_NAME: ${{ vars.GH_APP_PEM_KV_NAME }}
           PROD_STATE_ABFSS: ${{ steps.upload-prod-state.outputs.abfss_path }}
           CI_TARGET: ${{ needs.preflight.outputs.ci_target }}
-          PROD_WORKSPACE_NAME: ${{ needs.preflight.outputs.prod_workspace_name }}
-          PROD_LAKEHOUSE_NAME: ${{ needs.preflight.outputs.prod_lakehouse_name }}
         run: python3 ${{ env.SCRIPTS }}/inject_notebook.py
 
       - name: Post workspace comment
@@ -696,12 +688,16 @@ jobs:
 
   # ─── GATE 3 — UNIT TESTS ──────────────────────────────────────────────────
   # dbt unit tests against state:modified+ models with mocked YAML inputs.
-  # Runs on GitHub runner; parallel to Gate 2 (Fabric build).
+  # Runs in Fabric ephemeral workspace (sequential after Gate 2) so that
+  # get_columns_in_relation() resolves against real tables in the Spark catalog.
   gate-3-unit:
     name: "gate 3: unit tests"
-    needs: [preflight, fetch-prod-state, static-analysis]
-    if: needs.static-analysis.result == 'success' && needs.fetch-prod-state.result == 'success'
-    timeout-minutes: 8
+    needs: [provision, gate-2-write]
+    if: github.event.action != 'closed' && needs.gate-2-write.result == 'success'
+    timeout-minutes: 12
+    concurrency:
+      group: pr-${{ github.event.pull_request.number }}-gate-3
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -710,89 +706,32 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb>=1.8" "dbt-fabricspark>=1.8" --quiet
+      - run: pip install pyyaml --quiet
 
       - run: mkdir -p reports
 
-      - name: Emit Gate 3 pending
+      - name: Login — Fabric UAMI
+        uses: azure/login@v2
+        with:
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          client-id: ${{ vars.AZURE_FABRIC_CLIENT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Run Gate 3
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
-          python3 ${{ env.SCRIPTS }}/emit_status.py \
-            --context "ci/gate-3" \
-            --state pending \
-            --description "Gate 3: unit tests running" \
-            --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
-      - name: Download prod-state artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: prod-state-pr${{ github.event.pull_request.number }}
-          path: prod-state/
-
-      - name: dbt deps & parse (Fabric adapter — macro resolution only)
-        run: |
-          dbt deps --quiet
-          dbt parse --profiles-dir .github/profiles --target dbt_fabric_compile --quiet
-
-      - name: dbt test (unit, state:modified+, DuckDB execution)
-        id: dbt-test
-        continue-on-error: true
-        run: |
-          if [ -f prod-state/manifest.json ]; then
-            dbt test \
-              --profiles-dir .github/profiles \
-              --target dbt_duckdb \
-              --select "state:modified+,test_type:unit" \
-              --state ./prod-state \
-              --exclude package:elementary
-          else
-            echo "::warning::prod-state/manifest.json missing — running unit tests without --state."
-            dbt test \
-              --profiles-dir .github/profiles \
-              --target dbt_duckdb \
-              --select "test_type:unit" \
-              --exclude package:elementary || true
-          fi
-
-      - name: Parse run_results.json → reports/gate-3.json
-        id: parse
-        env:
-          DBT_TEST_OUTCOME: ${{ steps.dbt-test.outcome }}
-        run: |
-          if [ -f target/run_results.json ]; then
-            python3 ${{ env.SCRIPTS }}/parse_run_results.py \
-              --input target/run_results.json \
-              --output reports/gate-3.json || PARSE_RC=$?
-            PARSE_RC=${PARSE_RC:-0}
-          elif [ "$DBT_TEST_OUTCOME" = "success" ]; then
-            # dbt ran cleanly but wrote no run_results.json (empty unit-test set
-            # under state:modified+,test_type:unit). Pass per spec.
-            python3 - <<'PYEOF'
-          import json, os
-          os.makedirs("reports", exist_ok=True)
-          with open("reports/gate-3.json", "w") as f:
-              json.dump({
-                  "overall_status": "pass",
-                  "total": 0,
-                  "counts": {"pass": 0, "fail": 0, "error": 0, "skip": 0},
-                  "failures": [],
-                  "truncated": False,
-              }, f, indent=2)
-          PYEOF
-            PARSE_RC=0
-          else
-            # dbt errored before writing run_results.json — infrastructure failure,
-            # not an empty-set pass. Surface as Gate 3 failure.
-            echo "::error::Gate 3: dbt test exited '${DBT_TEST_OUTCOME}' and produced no run_results.json"
-            PARSE_RC=2
-          fi
-          echo "parse_rc=${PARSE_RC}" >> "$GITHUB_OUTPUT"
-          if [ "${PARSE_RC}" != "0" ]; then
-            exit "${PARSE_RC}"
-          fi
+          python3 ${{ env.SCRIPTS }}/gate_runner.py run-gate \
+            --gate 3 \
+            --workspace-id "${{ needs.provision.outputs.ephemeral_workspace_id }}" \
+            --lakehouse-id "${{ needs.provision.outputs.ephemeral_lakehouse_id }}" \
+            --notebook-id "${{ needs.provision.outputs.notebook_id }}" \
+            --head-sha "${{ github.event.pull_request.head.sha }}" \
+            --output reports/gate-3.json
 
       - name: Upload Gate 3 report
         if: always()

@@ -87,7 +87,7 @@ dbt_fab_spark:
       schema: "{{ env_var('SCHEMA') }}"
       method: livy
       type: fabricspark
-      reuse_livy_session: true
+      reuse_livy_session: false
       session_id_file: ./.livy-session-id.txt
       spark_config:
         name: "dbt_ci_job_{{ env_var('PR_NUMBER', 'manual') }}"

@@ -23,8 +23,8 @@ dispatch:
       - elementary
 
 models:
-  +workspace_name: "vibedata-prd-sales-pipeline"
   sales_pipeline:
+    +workspace_name: "vibedata-prd-sales-pipeline"
     staging:
       +materialized: view
       +schema: stg

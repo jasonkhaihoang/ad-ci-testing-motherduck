@@ -1,5 +1,10 @@
 # dbt Quality Workflow
 #
+# NOTE: This workflow uses DuckDB (dbt-duckdb) and belongs to the future
+# domain-ci-duckdb-bundle, NOT domain-ci-fabric-bundle. It is retained here
+# temporarily to avoid disruption to deployed domain repos. Do NOT delete it.
+# See VD-1871 for context.
+#
 # Runs dbt-project-evaluator on every PR using DuckDB (offline, no Fabric connection).
 # Runs in parallel with ci.yml — does not block merge.
 # Posts evaluation results as a PR comment (advisory only).
@@ -32,7 +37,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: pip install dbt-duckdb dbt-core pyyaml --quiet
+        run: pip install dbt-core pyyaml --quiet
 
       - name: dbt deps
         run: dbt deps --quiet

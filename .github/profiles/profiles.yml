@@ -1,8 +1,6 @@
 # CI dbt profiles for the six-gate ladder.
 # Profile name (dbt_fab_spark) matches domain repo dbt_project.yml — no project file changes needed.
 # CI workflow always passes --profiles-dir .github/profiles; no collision with ~/.dbt/profiles.yml.
-# NOTE: dbt_quality (DuckDB) target removed from domain-ci-fabric-bundle (VD-1871).
-#       It belongs to the future domain-ci-duckdb-bundle.
 dbt_fab_spark:
   outputs:
     # Gates 0 + 1: compile-only Fabric target. Macros resolve to Fabric T-SQL.
@@ -44,4 +42,11 @@ dbt_fab_spark:
       connect_retries: 2
       connect_timeout: 500
       threads: 10
+    # dbt-quality.yml: offline dbt-project-evaluator using DuckDB (no Fabric connection needed).
+    dbt_quality:
+      type: duckdb
+      path: /tmp/dbt_quality.duckdb
+      schema: main
+      threads: 4
+
   target: dbt_fabric_compile

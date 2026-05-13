@@ -174,7 +174,7 @@ def _run_dbt_ls() -> List[str]:
             "--state", "./prod-state",
             "--output", "json",
             "--profiles-dir", ".github/profiles",
-            "--target", "dbt_quality",
+            "--target", "dbt_fabric_compile",
         ],
         capture_output=True, text=True,
     )

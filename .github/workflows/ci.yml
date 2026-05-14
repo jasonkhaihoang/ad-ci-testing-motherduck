@@ -806,7 +806,7 @@ jobs:
   gate-4-data-test:
     name: "gate 4: data tests"
     needs: [provision, gate-2-write]
-    if: github.event.action != 'closed'
+    if: always() && github.event.action != 'closed'
     timeout-minutes: 12
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-4

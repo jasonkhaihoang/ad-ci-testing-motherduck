@@ -10,7 +10,7 @@ Public surface:
     render_sqlfluff(report)          — (passed, markdown)
     render_gitleaks(report)          — (passed, markdown)
     render_scorecard(report)         — (passed, markdown)
-    render_gate_0(compile, build_empty, schema_gate) — (passed, markdown)
+    render_gate_0(compile, schema_gate) — (passed, markdown)
     render_gate_3(summary)           — (passed, markdown)
 """
 
@@ -37,7 +37,6 @@ class ReportBundle:
     gitleaks: Any = field(default_factory=dict)
     scorecard: Any = field(default_factory=dict)
     compile_result: Any = None
-    build_empty_result: Any = None
     schema_gate: Any = None
     shortcut_seeding: Any = None
     gate_2: Any = None
@@ -173,16 +172,15 @@ def render_scorecard(report) -> tuple[bool, str]:
     return section_passed, section
 
 
-def render_gate_0(compile_result: dict, build_empty_result: dict, schema_gate: dict, *, extra_rows: str = "") -> tuple[bool, str]:
+def render_gate_0(compile_result: dict, schema_gate: dict, *, extra_rows: str = "") -> tuple[bool, str]:
     def _check_ok(report: dict) -> bool | None:
         if not report:
             return None
         return bool(report.get("passed"))
 
     compile_ok = _check_ok(compile_result)
-    build_empty_ok = _check_ok(build_empty_result)
     sg_ok = _check_ok(schema_gate)
-    gate_passed = all(v is not False for v in [compile_ok, build_empty_ok, sg_ok])
+    gate_passed = all(v is not False for v in [compile_ok, sg_ok])
 
     if not schema_gate:
         sg_cell = "⚠️ Unavailable"
@@ -205,7 +203,6 @@ def render_gate_0(compile_result: dict, build_empty_result: dict, schema_gate: d
     table = (
         "| Check | Result |\n|-------|--------|\n"
         + f"| dbt compile | {_cell(compile_result, _detail_compile)} |\n"
-        + f"| dbt build --empty | {_cell(build_empty_result, _detail_build_empty)} |\n"
         + f"| Schema gate | {sg_cell} |\n"
         + extra_rows
     )
@@ -574,6 +571,7 @@ def render_workspace_comment(
     workspace_name: str,
     head_branch: str,
     greenfield_fallback: bool = False,
+    shortcut_seeding: dict | None = None,
 ) -> str:
     ws_url = FABRIC_WORKSPACE_URL.format(workspace_id=workspace_id)
     greenfield_notice = ""
@@ -583,6 +581,9 @@ def render_workspace_comment(
             "Once a CD workflow publishes a `prod-manifest` artifact from `main`, "
             "Slim CI will use it automatically.\n"
         )
+    seeding_section = _render_shortcut_seeding(shortcut_seeding)
+    if seeding_section:
+        seeding_section = "\n" + seeding_section
     return f"""{COMMENT_MARKER}
 ## Ephemeral Workspace Ready
 
@@ -599,7 +600,7 @@ def render_workspace_comment(
 - [ ] Mark PR ready for review
 
 > CI reports available as workflow artifacts.
-"""
+{seeding_section}"""
 
 
 GATE_0_MARKER = "<!-- ci-gate-0 -->"
@@ -611,7 +612,6 @@ GATE_4_MARKER = "<!-- ci-gate-4 -->"
 
 def render_gate_0_comment(
     compile_result,
-    build_empty_result,
     schema_gate,
     *,
     ruff=None,
@@ -620,7 +620,7 @@ def render_gate_0_comment(
     scorecard=None,
     shortcut_seeding=None,
 ) -> str:
-    has_gate_0 = bool(compile_result or build_empty_result or schema_gate)
+    has_gate_0 = bool(compile_result or schema_gate)
     has_tools = any(x is not None for x in [ruff, sqlfluff, gitleaks, scorecard, shortcut_seeding])
 
     if not has_gate_0 and not has_tools:
@@ -645,7 +645,6 @@ def render_gate_0_comment(
 
     gate_0_passed, section = render_gate_0(
         compile_result or {},
-        build_empty_result or {},
         schema_gate or {},
         extra_rows=tool_table_rows,
     )
@@ -706,12 +705,11 @@ def render_details_comment(bundle: ReportBundle) -> str:
     gl_passed, _ = render_gitleaks(gitleaks)
     sc_passed, _ = render_scorecard(scorecard)
 
-    has_gate_0 = bool(bundle.compile_result or bundle.build_empty_result or bundle.schema_gate)
+    has_gate_0 = bool(bundle.compile_result or bundle.schema_gate)
     gate_0_passed = True
     if has_gate_0:
         gate_0_passed, _ = render_gate_0(
             bundle.compile_result or {},
-            bundle.build_empty_result or {},
             bundle.schema_gate or {},
         )
 
@@ -727,7 +725,6 @@ def render_details_comment(bundle: ReportBundle) -> str:
     if has_gate_0:
         table += (
             f"| dbt compile | {_status(bundle.compile_result)} | {_detail_compile(bundle.compile_result)} |\n"
-            f"| dbt build --empty | {_status(bundle.build_empty_result)} | {_detail_build_empty(bundle.build_empty_result)} |\n"
             f"| Schema gate | {_status(bundle.schema_gate)} | {_detail_schema_gate(bundle.schema_gate)} |\n"
         )
     table += (
@@ -745,7 +742,6 @@ def render_details_comment(bundle: ReportBundle) -> str:
 
     for collapsible in [
         _collapsible_compile(bundle.compile_result) if has_gate_0 else "",
-        _collapsible_build_empty(bundle.build_empty_result) if has_gate_0 else "",
         _collapsible_ruff(ruff),
         _collapsible_sqlfluff(sqlfluff),
         _collapsible_gitleaks(gitleaks),

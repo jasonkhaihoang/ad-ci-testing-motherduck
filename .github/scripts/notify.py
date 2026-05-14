@@ -95,7 +95,6 @@ def build_details_comment(
     gitleaks=None,
     scorecard=None,
     compile_result=None,
-    build_empty_result=None,
     schema_gate=None,
     shortcut_seeding=None,
     gate_2=None,
@@ -108,7 +107,6 @@ def build_details_comment(
         gitleaks=gitleaks if gitleaks is not None else {},
         scorecard=scorecard if scorecard is not None else {},
         compile_result=compile_result,
-        build_empty_result=build_empty_result,
         schema_gate=schema_gate,
         shortcut_seeding=shortcut_seeding,
         gate_2=gate_2,
@@ -144,7 +142,6 @@ def main():
     gitleaks = load_report("reports/gitleaks.json")
     scorecard = load_report("reports/scorecard.json")
     compile_result = load_report("reports/dbt_compile.json")
-    build_empty_result = load_report("reports/dbt_build_empty.json")
     schema_gate = load_report("reports/schema_gate.json")
     shortcut_seeding = load_report("reports/shortcut_seeding.json")
     gate_2 = load_report("reports/gate-2.json") or None
@@ -158,7 +155,6 @@ def main():
         gitleaks=gitleaks,
         scorecard=scorecard,
         compile_result=compile_result,
-        build_empty_result=build_empty_result,
         schema_gate=schema_gate,
         shortcut_seeding=shortcut_seeding,
         gate_2=gate_2,

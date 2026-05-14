@@ -9,7 +9,7 @@ Commands:
                    Find workspace by name and delete it. Exits cleanly if not found.
 
   cleanup          --repo OWNER/REPO
-                   List all vibedata-ephemeral-* workspaces. Delete those whose PR is closed.
+                   List all vibedata_ephemeral_* workspaces. Delete those whose PR is closed.
 
   add-contributor  --workspace-id ID --github-login LOGIN
                    Add the PR author as Member via the Power BI REST API.
@@ -158,14 +158,14 @@ def cmd_cleanup(args):
     resp = fabric_transport.request("GET", "/workspaces")
     ephemeral = [
         ws for ws in resp.get("value", [])
-        if ws["displayName"].startswith("vibedata-ephemeral-")
+        if ws["displayName"].startswith("vibedata_ephemeral_")
     ]
     print(f"Found {len(ephemeral)} ephemeral workspace(s).", flush=True)
     deleted = 0
 
     for ws in ephemeral:
         name = ws["displayName"]
-        parts = name.split("-")
+        parts = name.split("_")
         if len(parts) < 3 or not parts[-1].isdigit():
             continue
         pr_number = parts[-1]

@@ -884,6 +884,71 @@ jobs:
           pr_comment.upsert("<!-- ci-gate-4 -->", body, os.environ["PR_NUMBER"], os.environ["GITHUB_REPOSITORY"])
           EOF
 
+  # ─── GATE 5 — DATA-DIFF ─────────────────────────────────────────────────────
+  # Triggers data-diff vs prod via Fabric Item Jobs API after Gate 2.
+  # Skipped (no ci/gate-5 status emitted) when Gate 2 fails.
+  gate-5-data-diff:
+    name: "gate 5: data-diff"
+    needs: [provision, gate-2-write]
+    if: always() && github.event.action != 'closed'
+    timeout-minutes: 12
+    concurrency:
+      group: pr-${{ github.event.pull_request.number }}-gate-5
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - run: pip install pyyaml --quiet
+
+      - name: Login — Fabric UAMI
+        uses: azure/login@v2
+        with:
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          client-id: ${{ vars.AZURE_FABRIC_CLIENT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Run Gate 5
+        if: needs.gate-2-write.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 ${{ env.SCRIPTS }}/gate_runner.py run-gate \
+            --gate 5 \
+            --workspace-id "${{ needs.provision.outputs.ephemeral_workspace_id }}" \
+            --lakehouse-id "${{ needs.provision.outputs.ephemeral_lakehouse_id }}" \
+            --notebook-id "${{ needs.provision.outputs.notebook_id }}" \
+            --head-sha "${{ github.event.pull_request.head.sha }}" \
+            --output reports/gate-5.json
+
+      - name: Post gate-5 comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys
+          sys.path.insert(0, ".github/scripts")
+          import notify_render, pr_comment
+          try:
+              with open("reports/gate-5.json") as f:
+                  result = json.load(f)
+          except (OSError, json.JSONDecodeError):
+              result = None
+          body = notify_render.render_gate_5_comment(result)
+          pr_comment.upsert("<!-- ci-gate-5 -->", body, os.environ["PR_NUMBER"], os.environ["GITHUB_REPOSITORY"])
+          EOF
+
   # ─── TEARDOWN ─────────────────────────────────────────────────────────────
   # Deletes the ephemeral workspace when PR is closed or merged.
   # Fabric UAMI only — no KV access needed for teardown.

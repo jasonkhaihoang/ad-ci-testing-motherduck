@@ -70,8 +70,8 @@ except ImportError:
         render_gate_3,
         render_gate_4,
         render_gate_5,
-        render_gate_5_comment,
-        GATE_5_MARKER,
+        render_gate_5_comment,  # noqa: F401
+        GATE_5_MARKER,  # noqa: F401
         render_gitleaks,
         render_ruff,
         render_scorecard,

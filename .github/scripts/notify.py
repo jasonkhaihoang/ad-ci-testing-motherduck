@@ -34,6 +34,9 @@ try:
         render_gate_2,
         render_gate_3,
         render_gate_4,
+        render_gate_5,
+        render_gate_5_comment,
+        GATE_5_MARKER,
         render_gitleaks,
         render_ruff,
         render_scorecard,
@@ -66,6 +69,9 @@ except ImportError:
         render_gate_2,
         render_gate_3,
         render_gate_4,
+        render_gate_5,
+        render_gate_5_comment,  # noqa: F401
+        GATE_5_MARKER,  # noqa: F401
         render_gitleaks,
         render_ruff,
         render_scorecard,
@@ -85,6 +91,7 @@ format_gate_0 = render_gate_0
 format_gate_2 = render_gate_2
 format_gate_3 = render_gate_3
 format_gate_4 = render_gate_4
+format_gate_5 = render_gate_5
 build_comment = render_workspace_comment
 format_shortcut_seeding = _render_shortcut_seeding_impl
 

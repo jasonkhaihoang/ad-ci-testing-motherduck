@@ -61,3 +61,7 @@ models:
       - name: last_modified_date
         description: Timestamp of last modification to this account
         data_type: timestamp
+
+      - name: created_year
+        description: Calendar year the account was created, derived from created_date
+        data_type: integer

@@ -27,7 +27,10 @@ renamed as (
 
         -- Audit fields
         createddate as created_date,
-        lastmodifieddate as last_modified_date
+        lastmodifieddate as last_modified_date,
+
+        -- Derived fields
+        year(createddate) as created_year
 
     from source
     where isdeleted = false  -- Exclude soft-deleted records

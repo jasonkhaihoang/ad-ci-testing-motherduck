@@ -240,6 +240,7 @@ jobs:
           dbt deps --profiles-dir .github/profiles --target dbt_fabric_compile --quiet 2>&1 || true
           dbt ls \
             --select state:modified+ \
+            --resource-type model snapshot \
             --state prod-state \
             --output json \
             --profiles-dir .github/profiles \

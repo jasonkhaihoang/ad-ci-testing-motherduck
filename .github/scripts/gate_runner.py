@@ -290,6 +290,10 @@ def cmd_run_gate(args):
         overall_status = result.get("overall_status", "fail")
         item_count = result.get("total", 0)
         item_label = "unit test(s)"
+    elif gate == "5":
+        overall_status = result.get("overall_status", "fail")
+        item_count = len(result.get("artifacts") or [])
+        item_label = "artifact(s)"
     else:
         overall_status, models = parse_gate_result(result)
         item_count = len(models)

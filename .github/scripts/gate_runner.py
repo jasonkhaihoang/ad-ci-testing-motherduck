@@ -36,7 +36,7 @@ FABRIC_API = "https://api.fabric.microsoft.com/v1"
 ONELAKE_DFS = "https://onelake.dfs.fabric.microsoft.com"
 POLL_TERMINAL_STATES = {"Completed", "Failed", "Cancelled", "Deduped"}
 POLL_INTERVAL_S = 15
-POLL_TIMEOUT_S = 1800  # 30 minutes
+POLL_TIMEOUT_S = 7200  # 2 hours
 
 _GATE_CONTEXTS = {
     0: "ci/static-check",

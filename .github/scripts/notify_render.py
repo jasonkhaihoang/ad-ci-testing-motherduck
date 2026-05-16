@@ -703,14 +703,56 @@ def _render_value_delta_cell(value_delta: dict | None) -> str:
 
 # ─── public composers ────────────────────────────────────────────────────────
 
+_PROVISION_STEP_LABELS: list[tuple[str, str]] = [
+    ("provision", "Provision workspace/lakehouse"),
+    ("create-environment", "Create Fabric Environment"),
+    ("publish-environment", "Publish Fabric Environment"),
+    ("set-workspace-default", "Set workspace default environment"),
+    ("upload-prod-state", "Upload prod-state to OneLake"),
+    ("derive-shortcuts", "Derive shortcuts"),
+    ("seed-shortcuts", "Seed shortcuts"),
+    ("generate-notebook", "Generate and deploy notebook"),
+]
+
+
+def _step_outcome_icon(outcome: str) -> str:
+    return {
+        "success": "✅",
+        "failure": "❌",
+        "skipped": "⏭ skipped",
+        "cancelled": "🚫 cancelled",
+    }.get(outcome, "⏳")
+
+
+def _render_provision_steps_table(provision_steps: dict[str, str]) -> str:
+    rows = "\n".join(
+        f"| {label} | {_step_outcome_icon(provision_steps.get(key, ''))} |"
+        for key, label in _PROVISION_STEP_LABELS
+    )
+    return f"| Step | Result |\n|---|---|\n{rows}"
+
+
 def render_workspace_comment(
     workspace_id: str,
     workspace_name: str,
     head_branch: str,
     greenfield_fallback: bool = False,
     shortcut_seeding: dict | None = None,
+    *,
+    provision_failed: bool = False,
+    provision_steps: dict[str, str] | None = None,
 ) -> str:
     ws_url = FABRIC_WORKSPACE_URL.format(workspace_id=workspace_id)
+    if provision_failed:
+        table = _render_provision_steps_table(provision_steps or {})
+        return (
+            f"{COMMENT_MARKER}\n"
+            f"## ⚠️ Provision Failed\n\n"
+            f"**Workspace:** [{workspace_name}]({ws_url})  "
+            f"**Branch:** `{head_branch}`\n\n"
+            f"{table}\n\n"
+            f"> Gates 2–5 will not run. Fix the failing step and push again."
+        )
     greenfield_notice = ""
     if greenfield_fallback:
         greenfield_notice = (
@@ -804,12 +846,36 @@ def render_gate_0_comment(
     return "\n".join(parts)
 
 
-def render_gate_1_comment(greenfield: bool) -> str:
+def render_gate_1_comment(
+    closure: list[dict], *, greenfield: bool, passed: bool
+) -> str:
+    """Render the ci/state-modified+ PR comment with the model closure table."""
+    icon = _icon(passed)
+    heading = f"## Gate 1 — Compile-time Logic {icon}"
+
+    if not passed and not closure:
+        return (
+            f"{GATE_1_MARKER}\n"
+            f"{heading}\n\n"
+            "Gate failed before the model closure was resolved — see CI logs.\n"
+        )
+
     if greenfield:
-        detail = "Running **greenfield** build (no prod manifest available — full build)."
+        mode_line = "> ⚠️ **Greenfield** — full graph selected (no prod baseline available)\n"
     else:
-        detail = "Running **incremental** (slim CI) build using prod manifest."
-    return f"{GATE_1_MARKER}\n## Gate 1 — Manifest ✅\n\n{detail}\n"
+        n = len(closure)
+        mode_line = f"> **Incremental** — {n} model(s) in `state:modified+` scope\n"
+
+    if not closure:
+        return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n_No modified models in scope._\n"
+
+    rows = "\n".join(
+        f"| `{item['name']}` | `{item['materialization']}` |"
+        for item in closure
+    )
+    table = "| Model | Materialization |\n|-------|----------------|\n" + rows + "\n"
+    note = "_Project-owned models only — dbt package models (e.g. Elementary) are excluded._\n"
+    return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n{table}\n{note}"
 
 
 def render_gate_2_comment(result) -> str:

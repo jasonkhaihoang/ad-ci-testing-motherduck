@@ -150,7 +150,7 @@ jobs:
   # Downloads prod-state/manifest.json for Slim CI deferral.
   # Modes: artifact (gh run download from CD), onelake (Fabric UAMI), greenfield (dbt parse fallback).
   fetch-prod-state:
-    name: "gate 1: fetch prod state"
+    name: "ci/state-modified+: fetch prod state"
     if: github.event.action != 'closed'
     needs: preflight
     runs-on: ubuntu-latest
@@ -216,6 +216,60 @@ jobs:
           path: prod-state/
           retention-days: 7
 
+      - name: Compute model closure
+        if: always()
+        continue-on-error: true
+        run: |
+          dbt deps --profiles-dir .github/profiles --target dbt_fabric_compile --quiet 2>&1 || true
+          dbt ls \
+            --select state:modified+ \
+            --resource-type model snapshot \
+            --state prod-state \
+            --output json \
+            --profiles-dir .github/profiles \
+            --target dbt_fabric_compile \
+            2>/dev/null > /tmp/dbt_ls_output.json || true
+          python3 - <<'PYEOF'
+          import json, sys, os
+          sys.path.insert(0, os.environ.get("GITHUB_WORKSPACE", ".") + "/.github/scripts")
+          from dbt_manifest import Manifest
+
+          unique_ids = []
+          try:
+              with open("/tmp/dbt_ls_output.json") as f:
+                  for line in f:
+                      stripped = line.strip()
+                      if not stripped:
+                          continue
+                      try:
+                          entry = json.loads(stripped)
+                          uid = entry.get("unique_id")
+                          if uid:
+                              unique_ids.append(uid)
+                      except ValueError:
+                          pass
+          except FileNotFoundError:
+              pass
+
+          manifest = Manifest.from_path("target/manifest.json")
+          own_model_uids = set(manifest.own_models().keys())
+          closure = []
+          for uid in unique_ids:
+              node = manifest.node(uid)
+              if not node:
+                  continue
+              if uid in own_model_uids or node.get("resource_type") == "snapshot":
+                  closure.append({
+                      "name": node.get("name", uid),
+                      "materialization": (node.get("config") or {}).get("materialized", "unknown"),
+                  })
+
+          os.makedirs("prod-state", exist_ok=True)
+          with open("prod-state/closure.json", "w") as f:
+              json.dump(closure, f, indent=2)
+          print(f"Closure written: {len(closure)} model(s)", flush=True)
+          PYEOF
+
       - name: Emit Gate 1 final status
         if: always()
         env:
@@ -245,14 +299,21 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
           SCRIPTS_DIR: ${{ env.SCRIPTS }}
+          GATE1_JOB_STATUS: ${{ job.status }}
         run: |
           python3 - <<'EOF'
-          import os, sys
+          import json, os, sys
           sys.path.insert(0, os.environ["GITHUB_WORKSPACE"] + "/" + os.environ["SCRIPTS_DIR"])
           import notify_render, pr_comment
           greenfield = os.environ.get("GREENFIELD_FALLBACK", "false").lower() == "true"
-          body = notify_render.render_gate_1_comment(greenfield)
-          pr_comment.upsert("<!-- ci-state-modified+ -->", body, os.environ["PR_NUMBER"], os.environ["REPO"])
+          passed = os.environ.get("GATE1_JOB_STATUS", "failure").lower() == "success"
+          try:
+              with open("prod-state/closure.json") as f:
+                  closure = json.load(f)
+          except (FileNotFoundError, json.JSONDecodeError):
+              closure = []
+          body = notify_render.render_gate_1_comment(closure, greenfield=greenfield, passed=passed)
+          pr_comment.upsert(notify_render.GATE_1_MARKER, body, os.environ["PR_NUMBER"], os.environ["REPO"])
           EOF
 
   # ─── PROVISION ────────────────────────────────────────────────────────────
@@ -296,6 +357,23 @@ jobs:
           client-id: ${{ vars.AZURE_FABRIC_CLIENT_ID }}
           allow-no-subscriptions: true
 
+      - name: Emit ci/provision pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 ${{ env.SCRIPTS }}/emit_status.py \
+            --context "ci/provision" \
+            --state pending \
+            --description "Provision: workspace, environment, shortcuts, notebook" \
+            --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Cancel in-flight jobs
+        env:
+          EPHEMERAL_NAME: ${{ needs.preflight.outputs.ephemeral_name }}
+        run: python3 ${{ env.SCRIPTS }}/fabric_api.py cancel-running-jobs --name "$EPHEMERAL_NAME"
+
       - name: Provision ephemeral workspace and lakehouse
         id: provision
         env:
@@ -317,6 +395,7 @@ jobs:
             --environment-id "${{ steps.create-environment.outputs.environment_id }}"
 
       - name: Set Environment as workspace default
+        id: set-workspace-default
         run: |
           python3 ${{ env.SCRIPTS }}/fabric_api.py set-workspace-default-environment \
             --workspace-id "${{ steps.provision.outputs.workspace_id }}" \
@@ -359,6 +438,7 @@ jobs:
           dbt parse --profiles-dir .github/profiles --target dbt_fabric_compile --quiet
 
       - name: Derive shortcuts from manifest
+        id: derive-shortcuts
         env:
           PROD_WORKSPACE_ID: ${{ needs.preflight.outputs.prod_workspace_id }}
           PROD_LAKEHOUSE_ID: ${{ needs.preflight.outputs.prod_lakehouse_id }}
@@ -367,6 +447,7 @@ jobs:
           python3 ${{ env.SCRIPTS }}/derive_shortcuts.py --output shortcuts.json
 
       - name: Seed shortcuts in ephemeral lakehouse
+        id: seed-shortcuts
         run: |
           python3 ${{ env.SCRIPTS }}/fabric_api.py seed-shortcuts \
             --from-file shortcuts.json \
@@ -401,6 +482,7 @@ jobs:
 
       - name: Post workspace comment
         if: always()
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EPHEMERAL_WORKSPACE_ID: ${{ steps.provision.outputs.workspace_id }}
@@ -409,13 +491,43 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
           GREENFIELD_FALLBACK: ${{ needs.fetch-prod-state.outputs.greenfield_fallback }}
+          PROVISION_OUTCOME: ${{ job.status }}
+          STEP_PROVISION: ${{ steps.provision.outcome }}
+          STEP_CREATE_ENV: ${{ steps.create-environment.outcome }}
+          STEP_PUBLISH_ENV: ${{ steps.publish-environment.outcome }}
+          STEP_SET_DEFAULT: ${{ steps.set-workspace-default.outcome }}
+          STEP_UPLOAD_PROD_STATE: ${{ steps.upload-prod-state.outcome }}
+          STEP_DERIVE_SHORTCUTS: ${{ steps.derive-shortcuts.outcome }}
+          STEP_SEED_SHORTCUTS: ${{ steps.seed-shortcuts.outcome }}
+          STEP_GENERATE_NOTEBOOK: ${{ steps.generate-notebook.outcome }}
         run: python3 ${{ env.SCRIPTS }}/notify.py --workspace-comment-only
+
+      - name: Emit ci/provision final status
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            STATE=success
+            DESC="Provision: workspace ready"
+          else
+            STATE=failure
+            DESC="Provision: failed — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          python3 ${{ env.SCRIPTS }}/emit_status.py \
+            --context "ci/provision" \
+            --state "$STATE" \
+            --description "$DESC" \
+            --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   # ─── STATIC ANALYSIS ──────────────────────────────────────────────────────
   # Gate 0: linting + dbt compile + build --empty + diff-scoped schema gate.
   # Posts ci/static-check commit status; either blocking step failing marks Gate 0 failed.
   static-analysis:
-    name: "gate 0: static analysis"
+    name: "ci/static-check: static analysis"
     needs: [preflight]
     runs-on: ubuntu-latest
     steps:
@@ -647,7 +759,7 @@ jobs:
   # Runs in Fabric ephemeral workspace (sequential after Gate 2) so that
   # get_columns_in_relation() resolves against real tables in the Spark catalog.
   gate-3-unit:
-    name: "gate 3: unit tests"
+    name: "ci/unit-tests: unit tests"
     needs: [provision, gate-2-write]
     if: github.event.action != 'closed' && needs.gate-2-write.result == 'success'
     timeout-minutes: 12
@@ -743,7 +855,7 @@ jobs:
   # Triggers the injected notebook via Fabric Item Jobs API, polls until
   # terminal, downloads gate-2.json, emits ci/run commit status.
   gate-2-write:
-    name: "gate 2: isolated build"
+    name: "ci/run: isolated build"
     needs: [preflight, provision, fetch-prod-state]
     if: github.event.action != 'closed'
     timeout-minutes: 12
@@ -806,7 +918,7 @@ jobs:
   # Triggers dbt test --store-failures via Fabric Item Jobs API after Gate 2.
   # Skipped (no ci/data-tests status emitted) when Gate 2 fails.
   gate-4-data-test:
-    name: "gate 4: data tests"
+    name: "ci/data-tests: data tests"
     needs: [provision, gate-2-write]
     if: always() && github.event.action != 'closed'
     timeout-minutes: 12
@@ -871,7 +983,7 @@ jobs:
   # Triggers data-diff vs prod via Fabric Item Jobs API after Gate 2.
   # Skipped (no ci/data-diff status emitted) when Gate 2 fails.
   gate-5-data-diff:
-    name: "gate 5: data-diff"
+    name: "ci/data-diff: data-diff"
     needs: [provision, gate-2-write]
     if: always() && github.event.action != 'closed'
     timeout-minutes: 12

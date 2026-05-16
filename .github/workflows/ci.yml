@@ -269,10 +269,13 @@ jobs:
               pass
 
           manifest = Manifest.from_path("target/manifest.json")
+          own_model_uids = set(manifest.own_models().keys())
           closure = []
           for uid in unique_ids:
               node = manifest.node(uid)
-              if node:
+              if not node:
+                  continue
+              if uid in own_model_uids or node.get("resource_type") == "snapshot":
                   closure.append({
                       "name": node.get("name", uid),
                       "materialization": (node.get("config") or {}).get("materialized", "unknown"),

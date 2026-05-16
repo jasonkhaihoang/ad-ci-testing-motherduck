@@ -831,7 +831,8 @@ def render_gate_1_comment(
         for item in closure
     )
     table = "| Model | Materialization |\n|-------|----------------|\n" + rows + "\n"
-    return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n{table}"
+    note = "_Project-owned models only — dbt package models (e.g. Elementary) are excluded._\n"
+    return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n{table}\n{note}"
 
 
 def render_gate_2_comment(result) -> str:

@@ -15,13 +15,10 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 
 try:
-    from scripts import runner_io
     from scripts.dbt_ls import run_dbt_ls
 except ImportError:
-    import runner_io
     from dbt_ls import run_dbt_ls
 
 

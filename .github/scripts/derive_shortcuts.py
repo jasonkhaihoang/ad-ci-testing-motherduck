@@ -37,7 +37,6 @@ except ImportError:  # invoked as `python3 path/to/derive_shortcuts.py`
     import shortcut_seeding_report
     from dbt_ls import run_dbt_ls
 
-import runner_io
 from dbt_manifest import Manifest
 
 

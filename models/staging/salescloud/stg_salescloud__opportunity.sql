@@ -1,4 +1,4 @@
--- vd-1995: validate gate 2 model count fix
+-- vd-2022: push-2 validate sparkcompute idempotency
 {{ config(materialized='view') }}
 
 with source as (

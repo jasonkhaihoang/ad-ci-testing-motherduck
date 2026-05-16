@@ -16,6 +16,7 @@ renamed as (
         -- Opportunity attributes
         name as opportunity_name,
         stagename as stage_name,
+        upper(stagename) as stage_name_upper,
         type as opportunity_type,
         leadsource as lead_source,
 

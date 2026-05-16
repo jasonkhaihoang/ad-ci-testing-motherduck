@@ -284,6 +284,9 @@ jobs:
           print(f"Closure written: {len(closure)} model(s)", flush=True)
           PYEOF
 
+      - name: Force gate-1 failure (AC4 validation only — remove after)
+        run: exit 1
+
       - name: Emit Gate 1 final status
         if: always()
         env:

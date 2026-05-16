@@ -1,3 +1,4 @@
+-- vd-1995: validate gate 2 model count fix
 {{ config(materialized='view') }}
 
 with source as (

@@ -33,7 +33,6 @@ Optional env vars (add-contributor):
 from __future__ import annotations
 
 import argparse
-import datetime
 import json
 import os
 import sys
@@ -155,69 +154,9 @@ def cmd_teardown(args):
     print("Workspace deleted.", flush=True)
 
 
-def fetch_head_commit_date(repo, head_sha, gh_token):
-    """Return the committer date of *head_sha* as a UTC-aware datetime, or None."""
-    url = f"{GITHUB_API}/repos/{repo}/commits/{head_sha}"
-    req = urllib.request.Request(url)
-    req.add_header("Authorization", f"Bearer {gh_token}")
-    req.add_header("Accept", "application/vnd.github+json")
-    try:
-        with urllib.request.urlopen(req) as r:
-            data = json.loads(r.read())
-            date_str = data["commit"]["committer"]["date"]
-            return datetime.datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-    except Exception:
-        return None
-
-
-def workspace_decision(pr_state, commit_date, now, target_pr_number, pr_number):
-    """Pure decision function for a single workspace.
-
-    Returns (reason, should_delete) where reason is one of:
-      "skip"     - not the targeted PR (targeted mode only)
-      "orphaned" - PR not found on GitHub
-      "closed"   - PR is closed or merged
-      "expired"  - open PR whose head SHA commit is > 48h old
-      "active"   - open PR whose head SHA commit is <= 48h old
-    """
-    if target_pr_number is not None and str(pr_number) != str(target_pr_number):
-        return "skip", False
-    if pr_state == "not_found":
-        return "orphaned", True
-    if pr_state == "api_error":
-        return "active", False  # can't determine state; keep safe
-    if pr_state == "closed":
-        return "closed", True
-    # open PR
-    if commit_date is None:
-        return "active", False
-    age_hours = (now - commit_date).total_seconds() / 3600
-    if age_hours > 48:
-        return "expired", True
-    return "active", False
-
-
-def _fetch_pr_info(repo, pr_number, gh_token):
-    """Return (state, head_sha). state is 'open', 'closed', 'not_found', or 'api_error'."""
-    url = f"{GITHUB_API}/repos/{repo}/pulls/{pr_number}"
-    req = urllib.request.Request(url)
-    req.add_header("Authorization", f"Bearer {gh_token}")
-    req.add_header("Accept", "application/vnd.github+json")
-    try:
-        with urllib.request.urlopen(req) as r:
-            data = json.loads(r.read())
-            return data.get("state", "unknown"), data.get("head", {}).get("sha")
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return "not_found", None
-        return "api_error", None
-
-
 def cmd_cleanup(args):
     gh_token = os.environ.get("GH_TOKEN", "")
     repo = args.repo
-    target_pr = getattr(args, "pr_number", None)
-    now = datetime.datetime.now(datetime.timezone.utc)
 
     resp = fabric_transport.request("GET", "/workspaces")
     ephemeral = [
@@ -225,9 +164,7 @@ def cmd_cleanup(args):
         if ws["displayName"].startswith("vibedata_ephemeral_")
     ]
     print(f"Found {len(ephemeral)} ephemeral workspace(s).", flush=True)
-
-    audit_log = []
-    has_failure = False
+    deleted = 0
 
     for ws in ephemeral:
         name = ws["displayName"]
@@ -236,41 +173,31 @@ def cmd_cleanup(args):
             continue
         pr_number = parts[-1]
 
-        pr_state, head_sha = _fetch_pr_info(repo, pr_number, gh_token)
+        pr_url = f"{GITHUB_API}/repos/{repo}/pulls/{pr_number}"
+        req = urllib.request.Request(pr_url)
+        req.add_header("Authorization", f"Bearer {gh_token}")
+        req.add_header("Accept", "application/vnd.github+json")
 
-        commit_date = None
-        if pr_state == "open" and head_sha:
-            commit_date = fetch_head_commit_date(repo, head_sha, gh_token)
+        try:
+            with urllib.request.urlopen(req) as r:
+                pr_state = json.loads(r.read()).get("state", "unknown")
+        except urllib.error.HTTPError as e:
+            pr_state = "not_found" if e.code == 404 else None
+            if pr_state is None:
+                print(f"  Skipping {name}: GitHub API error {e.code}", flush=True)
+                continue
 
-        reason, should_delete = workspace_decision(
-            pr_state, commit_date, now, target_pr, pr_number
-        )
-
-        if reason == "skip":
-            continue
-
-        if should_delete:
+        if pr_state in ("closed", "not_found"):
+            print(f"  Deleting orphan: {name} (PR #{pr_number} is {pr_state})", flush=True)
             try:
                 fabric_transport.request("DELETE", f"/workspaces/{ws['id']}")
-                outcome = "deleted"
+                deleted += 1
             except Exception as exc:
                 print(f"  Failed to delete {name}: {exc}", file=sys.stderr)
-                outcome = "failed"
-                has_failure = True
         else:
-            outcome = "kept"
+            print(f"  Skipping: {name} (PR #{pr_number} is {pr_state})", flush=True)
 
-        print(f"  {name} (PR #{pr_number}): {reason} -> {outcome}", flush=True)
-        audit_log.append(
-            {"workspace": name, "pr": pr_number, "reason": reason, "outcome": outcome}
-        )
-
-    with open("workspace-cleanup-audit.json", "w") as f:
-        json.dump(audit_log, f, indent=2)
-    print(f"Audit log written ({len(audit_log)} entries).", flush=True)
-
-    if has_failure:
-        sys.exit(1)
+    print(f"Cleanup complete: {deleted} workspace(s) deleted.", flush=True)
 
 
 def cmd_add_contributor(args):
@@ -510,19 +437,38 @@ def create_environment(workspace_id: str, config_path: str) -> str:
         env_id = resp["id"]
         print(f"Created environment '{env_name}' ({env_id})", flush=True)
 
-    # Configure spark compute if specified
+    # Configure spark compute if specified.
+    # Skip when already published — re-PATCHing staging on a published environment
+    # triggers full pool-size validation and fails on constrained capacities (e.g. F2).
+    # Settings are stable once published; they only change on a bundle upgrade,
+    # which always arrives on a fresh workspace (supersession or new PR).
     spark_pool = config.get("spark_pool", {})
     if spark_pool:
-        sparkcompute_body = {
-            "nodeSize": spark_pool.get("node_size", "Small"),
-            "autoscale": spark_pool.get("auto_scale", {}),
-        }
-        fabric_transport.request(
-            "PATCH",
-            f"/workspaces/{workspace_id}/environments/{env_id}/staging/sparkcompute",
-            {**sparkcompute_body, "runtimeVersion": runtime_version},
+        env_detail = fabric_transport.request(
+            "GET", f"/workspaces/{workspace_id}/environments/{env_id}"
         )
-        print(f"Configured spark compute: {sparkcompute_body}", flush=True)
+        publish_state = (
+            env_detail.get("properties", {})
+            .get("publishDetails", {})
+            .get("state", "")
+        )
+        if publish_state == "Success":
+            print(
+                f"Environment already published (state: {publish_state}) — "
+                "skipping sparkcompute reconfigure.",
+                flush=True,
+            )
+        else:
+            sparkcompute_body = {
+                "nodeSize": spark_pool.get("node_size", "Small"),
+                "autoscale": spark_pool.get("auto_scale", {}),
+            }
+            fabric_transport.request(
+                "PATCH",
+                f"/workspaces/{workspace_id}/environments/{env_id}/staging/sparkcompute",
+                {**sparkcompute_body, "runtimeVersion": runtime_version},
+            )
+            print(f"Configured spark compute: {sparkcompute_body}", flush=True)
 
     # Upload pip packages to staging/libraries — API requires multipart/form-data environment.yml
     pip_packages = config.get("pip_packages", [])
@@ -614,9 +560,7 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("provision").add_argument("--name", required=True)
     sub.add_parser("teardown").add_argument("--name", required=True)
-    p_cleanup = sub.add_parser("cleanup")
-    p_cleanup.add_argument("--repo", required=True)
-    p_cleanup.add_argument("--pr-number", default=None)
+    sub.add_parser("cleanup").add_argument("--repo", required=True)
     p = sub.add_parser("add-contributor")
     p.add_argument("--workspace-id", required=True)
     p.add_argument("--github-login", required=True)

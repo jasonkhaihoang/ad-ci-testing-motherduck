@@ -43,4 +43,4 @@ renamed as (
 )
 
 select * from renamed
--- modified: 2026-05-16
+-- modified: 2026-05-16 (vd-2030 gate3 validation)

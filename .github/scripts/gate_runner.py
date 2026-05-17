@@ -36,7 +36,7 @@ FABRIC_API = "https://api.fabric.microsoft.com/v1"
 ONELAKE_DFS = "https://onelake.dfs.fabric.microsoft.com"
 POLL_TERMINAL_STATES = {"Completed", "Failed", "Cancelled", "Deduped"}
 POLL_INTERVAL_S = 15
-POLL_TIMEOUT_S = 1800  # 30 minutes
+POLL_TIMEOUT_S = 7200  # 2 hours
 
 _GATE_CONTEXTS = {
     0: "ci/static-check",
@@ -303,9 +303,14 @@ def cmd_run_gate(args):
         overall_status = result.get("overall_status", "fail")
         item_count = len(result.get("artifacts") or [])
         item_label = "artifact(s)"
-    else:
-        overall_status, models = parse_gate_result(result)
+    elif gate == "2":
+        overall_status = result.get("overall_status", "fail")
+        models = (result.get("build") or {}).get("models") or []
         item_count = len(models)
+        item_label = "model(s)"
+    else:
+        overall_status = result.get("overall_status", "fail")
+        item_count = 0
         item_label = "model(s)"
 
     gh_state = map_gate_status(overall_status)

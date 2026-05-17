@@ -36,7 +36,8 @@ renamed as (
 
         -- Audit fields
         lastmodifieddate as last_modified_date,
-        systemmodstamp as system_modified_timestamp
+        systemmodstamp as system_modified_timestamp,
+        current_timestamp() as _loaded_at
 
     from source
     where isdeleted = false  -- Exclude soft-deleted records

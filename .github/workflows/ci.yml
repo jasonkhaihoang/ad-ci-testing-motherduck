@@ -916,7 +916,8 @@ jobs:
             --workspace-id "${{ needs.provision.outputs.ephemeral_workspace_id }}" \
             --lakehouse-id "${{ needs.provision.outputs.ephemeral_lakehouse_id }}" \
             --notebook-id "${{ needs.provision.outputs.notebook_id }}" \
-            --head-sha "${{ github.event.pull_request.head.sha }}"
+            --head-sha "${{ github.event.pull_request.head.sha }}" \
+            --output reports/gate-2.json
 
       - name: Post gate-2 comment
         if: always()

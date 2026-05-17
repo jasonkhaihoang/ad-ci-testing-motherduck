@@ -1,4 +1,5 @@
 {{ config(materialized='view') }}
+-- vd-2029 validation touch
 
 with source as (
     select * from {{ source('salescloud', 'opportunity') }}

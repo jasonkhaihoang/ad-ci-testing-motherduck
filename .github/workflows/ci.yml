@@ -916,7 +916,8 @@ jobs:
             --workspace-id "${{ needs.provision.outputs.ephemeral_workspace_id }}" \
             --lakehouse-id "${{ needs.provision.outputs.ephemeral_lakehouse_id }}" \
             --notebook-id "${{ needs.provision.outputs.notebook_id }}" \
-            --head-sha "${{ github.event.pull_request.head.sha }}"
+            --head-sha "${{ github.event.pull_request.head.sha }}" \
+            --output reports/gate-2.json
 
       - name: Post gate-2 comment
         if: always()
@@ -924,6 +925,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           python3 - <<'EOF'
           import json, os, sys
@@ -934,7 +936,7 @@ jobs:
                   result = json.load(f)
           except (OSError, json.JSONDecodeError):
               result = None
-          body = notify_render.render_gate_2_comment(result)
+          body = notify_render.render_gate_2_comment(result, run_url=os.environ.get("RUN_URL", ""))
           pr_comment.upsert("<!-- ci-run -->", body, os.environ["PR_NUMBER"], os.environ["GITHUB_REPOSITORY"])
           EOF
 

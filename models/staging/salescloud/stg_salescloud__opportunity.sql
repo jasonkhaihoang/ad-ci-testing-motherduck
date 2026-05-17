@@ -44,3 +44,5 @@ renamed as (
 
 select * from renamed
 -- modified: 2026-05-16
+
+-- vd-2031 re-run 2026-05-17-1256

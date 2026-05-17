@@ -286,7 +286,13 @@ def cmd_run_gate(args):
             )
 
     print(f"Downloading gate-{gate} result from OneLake…", flush=True)
-    result = _download_gate_result(workspace_id, lakehouse_id, head_sha, gate, storage_token)
+    try:
+        result = _download_gate_result(workspace_id, lakehouse_id, head_sha, gate, storage_token)
+    except urllib.error.HTTPError as e:
+        if repo and gh_token:
+            _post_github_status(repo, head_sha, context, "failure", f"Gate {gate}: result file not found (HTTP {e.code})", run_url, gh_token)
+        print(f"Gate {gate} failed: result file not found (HTTP {e.code})", file=sys.stderr)
+        sys.exit(1)
 
     if gate == "4":
         # Inject pre-flight result and re-derive overall status from tests
@@ -303,9 +309,14 @@ def cmd_run_gate(args):
         overall_status = result.get("overall_status", "fail")
         item_count = len(result.get("artifacts") or [])
         item_label = "artifact(s)"
-    else:
-        overall_status, models = parse_gate_result(result)
+    elif gate == "2":
+        overall_status = result.get("overall_status", "fail")
+        models = (result.get("build") or {}).get("models") or []
         item_count = len(models)
+        item_label = "model(s)"
+    else:
+        overall_status = result.get("overall_status", "fail")
+        item_count = 0
         item_label = "model(s)"
 
     gh_state = map_gate_status(overall_status)

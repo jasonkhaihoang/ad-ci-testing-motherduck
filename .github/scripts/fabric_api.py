@@ -12,7 +12,7 @@ Commands:
                    List all vibedata_ephemeral_* workspaces. Delete those whose PR is closed.
 
   add-contributor  --workspace-id ID --github-login LOGIN
-                   Add the PR author as Member via the Power BI REST API.
+                   Add the PR author as Admin via the Power BI REST API.
                    UPN is constructed as {github_login}@{AAD_DOMAIN}.
                    In production, GitHub SAML SSO ensures the login matches the UPN prefix.
                    Warns and continues if the user is not found; never blocks CI.
@@ -77,10 +77,10 @@ def find_lakehouse_by_name(workspace_id: str, name: str) -> dict | None:
     return None
 
 
-# ─── Member role helper ───────────────────────────────────────────────────────
+# ─── Admin role helper ───────────────────────────────────────────────────────
 
 def add_workspace_user(workspace_id: str, upn: str):
-    """Add a user as Member on the workspace by UPN via the Power BI REST API.
+    """Add a user as Admin on the workspace by UPN via the Power BI REST API.
 
     The Power BI groups/users endpoint accepts the UPN (email address) directly —
     no AAD object ID lookup required. The call is idempotent: if the user already
@@ -274,7 +274,7 @@ def cmd_cleanup(args):
 
 
 def cmd_add_contributor(args):
-    """Add the PR author as Member on the ephemeral workspace.
+    """Add the PR author as Admin on the ephemeral workspace.
 
     UPN resolution order:
       1. AAD_UPN_OVERRIDE env var — used as-is (dev/test escape hatch for accounts

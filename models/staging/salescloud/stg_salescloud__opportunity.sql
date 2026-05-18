@@ -43,4 +43,4 @@ renamed as (
 )
 
 select * from renamed
--- modified: 2026-05-16
+-- modified: 2026-05-18 (VD-1596 phase-2 validation)

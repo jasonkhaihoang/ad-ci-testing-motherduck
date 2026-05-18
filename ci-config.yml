@@ -25,7 +25,8 @@ notebook_glob: "intents/**/*.ipynb"         # Glob pattern to find the dbt noteb
 
 prod_manifest_source:
   mode: artifact
-  workflow: publish-prod-manifest.yml
+  # VD-1596 Phase 2 validation: workflow key intentionally removed to inject a config error
+  # workflow: publish-prod-manifest.yml
   artifact_name: prod-manifest
   main_branch: main
 

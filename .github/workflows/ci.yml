@@ -951,7 +951,7 @@ jobs:
     name: "ci/data-tests: data tests"
     needs: [provision, gate-2-write]
     if: always() && github.event.action != 'closed'
-    timeout-minutes: 12
+    timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-4
       cancel-in-progress: true

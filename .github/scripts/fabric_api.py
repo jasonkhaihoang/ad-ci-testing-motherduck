@@ -87,17 +87,27 @@ def add_workspace_user(workspace_id: str, upn: str):
     has access their role is updated. If the UPN is not found in AAD the API
     returns an error; we log a warning and continue without blocking CI.
     """
+    payload = {"emailAddress": upn, "groupUserAccessRight": "Admin"}
     try:
         fabric_transport.request(
-            "POST", f"/groups/{workspace_id}/users",
-            {"emailAddress": upn, "groupUserAccessRight": "Admin"},
-            audience="powerbi",
+            "POST", f"/groups/{workspace_id}/users", payload, audience="powerbi",
         )
         print(f"Added '{upn}' as Admin on workspace {workspace_id}.", flush=True)
     except urllib.error.HTTPError as e:
         body_text = e.read().decode(errors="replace")
+        # POST refuses to mutate an existing user; PUT updates the role.
+        if e.code == 400 and "AddingAlreadyExistsGroupUserNotSupportedError" in body_text:
+            try:
+                fabric_transport.request(
+                    "PUT", f"/groups/{workspace_id}/users", payload, audience="powerbi",
+                )
+                print(f"Updated '{upn}' to Admin on workspace {workspace_id}.", flush=True)
+                return
+            except urllib.error.HTTPError as e2:
+                body_text = e2.read().decode(errors="replace")
+                e = e2
         print(
-            f"Warning: could not add '{upn}' as Admin (HTTP {e.code}): {body_text}. "
+            f"Warning: could not set '{upn}' as Admin (HTTP {e.code}): {body_text}. "
             "Skipping — provisioning continues.",
             flush=True,
         )

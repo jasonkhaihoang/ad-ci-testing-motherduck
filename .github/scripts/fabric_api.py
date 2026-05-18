@@ -90,14 +90,14 @@ def add_workspace_user(workspace_id: str, upn: str):
     try:
         fabric_transport.request(
             "POST", f"/groups/{workspace_id}/users",
-            {"emailAddress": upn, "groupUserAccessRight": "Member"},
+            {"emailAddress": upn, "groupUserAccessRight": "Admin"},
             audience="powerbi",
         )
-        print(f"Added '{upn}' as Member on workspace {workspace_id}.", flush=True)
+        print(f"Added '{upn}' as Admin on workspace {workspace_id}.", flush=True)
     except urllib.error.HTTPError as e:
         body_text = e.read().decode(errors="replace")
         print(
-            f"Warning: could not add '{upn}' as Member (HTTP {e.code}): {body_text}. "
+            f"Warning: could not add '{upn}' as Admin (HTTP {e.code}): {body_text}. "
             "Skipping — provisioning continues.",
             flush=True,
         )

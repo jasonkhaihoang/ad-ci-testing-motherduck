@@ -156,6 +156,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       greenfield_fallback: ${{ steps.fetch.outputs.greenfield_fallback }}
+      platform_error_mode: ${{ steps.fetch.outputs.mode }}
+      platform_error_category: ${{ steps.fetch.outputs.category }}
+      platform_error_reason: ${{ steps.fetch.outputs.reason }}
     steps:
       - uses: actions/checkout@v4
 
@@ -296,6 +299,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GREENFIELD_FALLBACK: ${{ steps.fetch.outputs.greenfield_fallback }}
+          PLATFORM_ERROR_MODE: ${{ steps.fetch.outputs.mode }}
+          PLATFORM_ERROR_CATEGORY: ${{ steps.fetch.outputs.category }}
+          PLATFORM_ERROR_REASON: ${{ steps.fetch.outputs.reason }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
           SCRIPTS_DIR: ${{ env.SCRIPTS }}
@@ -307,12 +313,26 @@ jobs:
           import notify_render, pr_comment
           greenfield = os.environ.get("GREENFIELD_FALLBACK", "false").lower() == "true"
           passed = os.environ.get("GATE1_JOB_STATUS", "failure").lower() == "success"
+          # VD-1596 Phase 2: artifact-mode platform errors carry mode/category/reason.
+          category = os.environ.get("PLATFORM_ERROR_CATEGORY", "")
+          platform_error = None
+          if not passed and category:
+              platform_error = {
+                  "mode": os.environ.get("PLATFORM_ERROR_MODE", "artifact"),
+                  "category": category,
+                  "reason": os.environ.get("PLATFORM_ERROR_REASON", ""),
+              }
           try:
               with open("prod-state/closure.json") as f:
                   closure = json.load(f)
           except (FileNotFoundError, json.JSONDecodeError):
               closure = []
-          body = notify_render.render_gate_1_comment(closure, greenfield=greenfield, passed=passed)
+          body = notify_render.render_gate_1_comment(
+              closure,
+              greenfield=greenfield,
+              passed=passed,
+              platform_error=platform_error,
+          )
           pr_comment.upsert(notify_render.GATE_1_MARKER, body, os.environ["PR_NUMBER"], os.environ["REPO"])
           EOF
 
@@ -780,13 +800,13 @@ jobs:
 
   # ─── GATE 3 — UNIT TESTS ──────────────────────────────────────────────────
   # dbt unit tests against state:modified+ models with mocked YAML inputs.
-  # Runs in Fabric ephemeral workspace (sequential after Gate 2) so that
+  # Runs in Fabric ephemeral workspace (in parallel with Gate 2 — no data dependency) so that
   # get_columns_in_relation() resolves against real tables in the Spark catalog.
   gate-3-unit:
     name: "ci/unit-tests: unit tests"
-    needs: [provision, gate-2-write]
-    if: github.event.action != 'closed' && needs.gate-2-write.result == 'success'
-    timeout-minutes: 12
+    needs: [provision]
+    if: github.event.action != 'closed'
+    timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-3
       cancel-in-progress: true
@@ -882,7 +902,7 @@ jobs:
     name: "ci/run: isolated build"
     needs: [preflight, provision, fetch-prod-state]
     if: github.event.action != 'closed'
-    timeout-minutes: 35
+    timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-2
       cancel-in-progress: true
@@ -916,7 +936,8 @@ jobs:
             --workspace-id "${{ needs.provision.outputs.ephemeral_workspace_id }}" \
             --lakehouse-id "${{ needs.provision.outputs.ephemeral_lakehouse_id }}" \
             --notebook-id "${{ needs.provision.outputs.notebook_id }}" \
-            --head-sha "${{ github.event.pull_request.head.sha }}"
+            --head-sha "${{ github.event.pull_request.head.sha }}" \
+            --output reports/gate-2.json
 
       - name: Post gate-2 comment
         if: always()
@@ -924,6 +945,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           python3 - <<'EOF'
           import json, os, sys
@@ -934,7 +956,7 @@ jobs:
                   result = json.load(f)
           except (OSError, json.JSONDecodeError):
               result = None
-          body = notify_render.render_gate_2_comment(result)
+          body = notify_render.render_gate_2_comment(result, run_url=os.environ.get("RUN_URL", ""))
           pr_comment.upsert("<!-- ci-run -->", body, os.environ["PR_NUMBER"], os.environ["GITHUB_REPOSITORY"])
           EOF
 

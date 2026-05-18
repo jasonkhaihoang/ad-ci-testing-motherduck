@@ -298,30 +298,53 @@ def render_gate_2(result: dict | None) -> str:
         return ""
     overall = result.get("overall_status", "")
     passed = overall == "pass"
-    models = result.get("models") or []
     head_sha = result.get("head_sha", "")
-    passed_count = sum(1 for m in models if m.get("status") in ("success", "pass"))
-    failed_count = len(models) - passed_count
-    summary_line = f"{passed_count} passed / {failed_count} failed"
+
+    clone = result.get("clone") or {}
+    build = result.get("build") or {}
+    clone_models = clone.get("models") or []
+    build_models = build.get("models") or []
+    clone_status = clone.get("status", "fail")
+    build_status = build.get("status", "fail")
+
+    clone_icon = _icon(clone_status == "pass")
+    build_icon = _icon(build_status == "pass")
+
+    parts = [
+        f"Clone: {len(clone_models)} {clone_icon}",
+        f"Build: {len(build_models)} {build_icon}",
+    ]
     if head_sha:
-        summary_line += f" · `{head_sha[:7]}`"
+        parts.append(f"`{head_sha[:7]}`")
+    summary_line = " · ".join(parts)
+
     head = f"## Gate 2 — Write {_icon(passed)}\n\n{summary_line}\n"
-    failures = [m for m in models if m.get("status") not in ("success", "pass")]
-    if not failures:
-        return head + "\n"
-    rows = "\n".join(
-        f"| `{m.get('name', '')}` | {m.get('status', '')} | {(m.get('error_message') or '')[:200]} |"
-        for m in failures[:10]
-    )
-    tail = f"\n\n_Showing top {len(failures[:10])} of {failed_count} failing models._" if failed_count > 10 else ""
-    return (
-        head
-        + "\n<details>\n<summary>Failing models</summary>\n\n"
-        + "| Model | Status | Error |\n|-------|--------|-------|\n"
-        + rows
-        + tail
-        + "\n\n</details>\n"
-    )
+
+    sections = [head]
+    for step_label, step_status, step_models in [
+        ("Clone", clone_status, clone_models),
+        ("Build", build_status, build_models),
+    ]:
+        failures = [m for m in step_models if m.get("status") not in ("success", "pass")]
+        if step_status == "fail" and failures:
+            rows = "\n".join(
+                f"| `{m.get('name', '')}` | {m.get('status', '')} | {(m.get('error_message') or '')[:200]} |"
+                for m in failures[:10]
+            )
+            tail = (
+                f"\n\n_Showing top {min(10, len(failures))} of {len(failures)} failing models._"
+                if len(failures) > 10
+                else ""
+            )
+            sections.append(
+                f"\n<details>\n<summary>{step_label} — failing models</summary>\n\n"
+                "| Model | Status | Error |\n|-------|--------|-------|\n"
+                + rows
+                + tail
+                + "\n\n</details>\n"
+            )
+
+    return "".join(sections)
 
 
 def render_gate_4(result: dict | None) -> str:
@@ -847,11 +870,37 @@ def render_gate_0_comment(
 
 
 def render_gate_1_comment(
-    closure: list[dict], *, greenfield: bool, passed: bool
+    closure: list[dict],
+    *,
+    greenfield: bool,
+    passed: bool,
+    platform_error: dict | None = None,
 ) -> str:
-    """Render the ci/state-modified+ PR comment with the model closure table."""
+    """Render the ci/state-modified+ PR comment.
+
+    When `platform_error` is set (VD-1596 Phase 2 artifact-mode failure), the
+    body distinguishes a platform error from greenfield by carrying the
+    Mode / Category / Reason triple plus a remediation footer that tells the
+    operator to re-run the job or push a new commit. `platform_error` keys:
+    `mode`, `category`, `reason`.
+    """
     icon = _icon(passed)
     heading = f"## Gate 1 — Compile-time Logic {icon}"
+
+    if platform_error:
+        mode = platform_error.get("mode", "artifact")
+        category = platform_error.get("category", "")
+        reason = platform_error.get("reason", "")
+        return (
+            f"{GATE_1_MARKER}\n"
+            f"{heading}\n\n"
+            f"> ❌ **Platform error** — fetching prod state failed.\n\n"
+            f"- Mode: {mode}\n"
+            f"- Category: {category}\n"
+            f"- Reason: {reason}\n\n"
+            "Gates 2–5 did not run. Re-run this job once the issue is resolved, "
+            "or push a new commit.\n"
+        )
 
     if not passed and not closure:
         return (
@@ -878,12 +927,14 @@ def render_gate_1_comment(
     return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n{table}\n{note}"
 
 
-def render_gate_2_comment(result) -> str:
+def render_gate_2_comment(result, *, run_url: str = "") -> str:
     if not result:
+        link = f" [View CI run]({run_url})" if run_url else ""
         return (
             f"{GATE_2_MARKER}\n"
             f"## Gate 2 — Write ❌\n\n"
-            f"Notebook run failed before writing results — check CI logs for HTTP error, timeout, or notebook crash.\n"
+            f"Notebook run failed before writing results — "
+            f"check CI logs for HTTP error, timeout, or notebook crash.{link}\n"
         )
     section = render_gate_2(result)
     return f"{GATE_2_MARKER}\n{section}"

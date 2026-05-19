@@ -578,7 +578,7 @@ jobs:
   static-analysis:
     name: "ci/static-check: static analysis"
     needs: [preflight]
-    if: false  # disabled for VD-1746 label-binding validation
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -811,7 +811,7 @@ jobs:
   gate-3-unit:
     name: "ci/unit-tests: unit tests"
     needs: [provision]
-    if: false  # disabled for VD-1746 label-binding validation
+    if: github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-3

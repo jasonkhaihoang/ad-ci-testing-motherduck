@@ -38,7 +38,7 @@ jobs:
   # Uses KV UAMI to fetch App credentials for the force-push token; no Fabric UAMI needed.
   preflight:
     name: "ci/preflight: intent + config"
-    if: false  # disabled for VD-2065 gate-5 validation
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     outputs:
       domain: ${{ steps.preflight.outputs.domain }}

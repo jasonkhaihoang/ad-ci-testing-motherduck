@@ -46,3 +46,5 @@ select * from renamed
 -- modified: 2026-05-16
 
 -- validation: VD-2030/VD-2035/VU-1194 2026-05-18
+
+-- VD-2065 gate-5 Livy executor validation bump

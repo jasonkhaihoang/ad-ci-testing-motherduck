@@ -15,7 +15,7 @@ name: Ephemeral Fabric CI
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
-    branches: [main]
+    branches: [main, test/vd-2063-bundle-deploy]
 
 concurrency:
   group: ci-pr-${{ github.event.pull_request.number }}

@@ -86,7 +86,7 @@ def add_workspace_user(workspace_id: str, upn: str, role: str = "Admin"):
     new user) when PUT returns 404. Both calls are non-blocking: any other error
     logs a warning and allows provisioning to continue.
     """
-    payload = {"emailAddress": upn, "groupUserAccessRight": role, "principalType": "User"}
+    payload = {"identifier": upn, "groupUserAccessRight": role, "principalType": "User"}
     for method in ("PUT", "POST"):
         try:
             fabric_transport.request(

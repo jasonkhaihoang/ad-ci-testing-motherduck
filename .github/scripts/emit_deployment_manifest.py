@@ -50,7 +50,6 @@ def build_deployment_manifest(
                 "unique_id": uid,
                 "name": node.get("name", ""),
                 "materialized": config.get("materialized", ""),
-                "schema": node.get("schema", ""),
                 "pre_existing_in_prod": uid in prod_node_ids,
                 "unique_key": config.get("unique_key"),
             }

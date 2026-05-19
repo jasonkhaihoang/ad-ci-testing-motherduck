@@ -33,6 +33,7 @@ renamed as (
         isclosed as is_closed,
         iswon as is_won,
         isdeleted as is_deleted,
+        iswon and not isclosed as is_open_win,
 
         -- Audit fields
         lastmodifieddate as last_modified_date,

@@ -812,7 +812,6 @@ jobs:
     if: false  # VD-2063 e2e: disabled to focus on gate-5
     name: "ci/unit-tests: unit tests"
     needs: [provision]
-    if: github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-3
@@ -974,7 +973,6 @@ jobs:
     if: false  # VD-2063 e2e: disabled to focus on gate-5
     name: "ci/data-tests: data tests"
     needs: [provision, gate-2-write]
-    if: always() && github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-4

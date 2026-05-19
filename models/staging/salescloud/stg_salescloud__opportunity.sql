@@ -36,13 +36,14 @@ renamed as (
 
         -- Audit fields
         lastmodifieddate as last_modified_date,
-        systemmodstamp as system_modified_timestamp
+        systemmodstamp as system_modified_timestamp,
+
+        -- VD-1746 validation: new column to trigger Gate 5 schema diff
+        'pending' as review_status
 
     from source
     where isdeleted = false  -- Exclude soft-deleted records
 )
 
 select * from renamed
--- modified: 2026-05-16
-
--- validation: VD-2030/VD-2035/VU-1194 2026-05-18
+-- modified: 2026-05-19 (VD-1746 Gate 5 label-binding validation)

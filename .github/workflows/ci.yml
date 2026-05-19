@@ -813,7 +813,7 @@ jobs:
   # get_columns_in_relation() resolves against real tables in the Spark catalog.
   gate-3-unit:
     name: "ci/unit-tests: unit tests"
-    needs: [preflight]
+    needs: [provision]
     if: github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:

@@ -14,7 +14,7 @@ name: Ephemeral Fabric CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed, auto_merge_enabled, auto_merge_disabled]
+    types: [opened, synchronize, reopened, closed]
     branches: [main]
 
 concurrency:
@@ -87,10 +87,6 @@ jobs:
 
       - name: Run preflight checks
         id: preflight
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           mkdir -p reports
           python3 ${{ env.SCRIPTS }}/preflight.py \
@@ -159,7 +155,7 @@ jobs:
   # Modes: artifact (gh run download from CD), onelake (Fabric UAMI), greenfield (dbt parse fallback).
   fetch-prod-state:
     name: "ci/state-modified+: fetch prod state"
-    if: false  # VD-1747: disabled
+    if: github.event.action != 'closed'
     needs: preflight
     runs-on: ubuntu-latest
     outputs:
@@ -349,7 +345,7 @@ jobs:
   # 2. Fabric UAMI: find-or-create workspace + lakehouse, inject notebook
   provision:
     name: "provision: ephemeral workspace & shortcuts"
-    if: false  # VD-1747: disabled
+    if: github.event.action != 'closed'
     needs: [preflight, fetch-prod-state]
     runs-on: ubuntu-latest
     outputs:
@@ -581,7 +577,6 @@ jobs:
   # Posts ci/static-check commit status; either blocking step failing marks Gate 0 failed.
   static-analysis:
     name: "ci/static-check: static analysis"
-    if: false  # VD-1747: disabled
     needs: [preflight]
     runs-on: ubuntu-latest
     steps:
@@ -815,7 +810,7 @@ jobs:
   gate-3-unit:
     name: "ci/unit-tests: unit tests"
     needs: [provision]
-    if: false  # VD-1747: disabled
+    if: github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-3
@@ -911,7 +906,7 @@ jobs:
   gate-2-write:
     name: "ci/run: isolated build"
     needs: [preflight, provision, fetch-prod-state]
-    if: false  # VD-1747: disabled
+    if: github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-2
@@ -976,7 +971,7 @@ jobs:
   gate-4-data-test:
     name: "ci/data-tests: data tests"
     needs: [provision, gate-2-write]
-    if: false  # VD-1747: disabled
+    if: always() && github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-4
@@ -1041,7 +1036,7 @@ jobs:
   gate-5-data-diff:
     name: "ci/data-diff: data-diff"
     needs: [provision, gate-2-write]
-    if: false  # VD-1747: disabled
+    if: always() && github.event.action != 'closed'
     timeout-minutes: 12
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-5

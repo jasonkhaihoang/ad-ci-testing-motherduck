@@ -22,7 +22,7 @@ env:
   PYTHON_VERSION: "3.11"
 
 jobs:
-  evaluate:
+  dbt-project-evaluate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

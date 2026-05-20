@@ -1,4 +1,4 @@
--- ci-test marker (VD-2075 validation)
+-- ci-test marker (VD-2075 validation v2)
 {{ config(materialized='view') }}
 
 with source as (

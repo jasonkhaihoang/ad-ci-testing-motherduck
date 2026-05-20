@@ -347,8 +347,8 @@ jobs:
   # ─── PROVISION ────────────────────────────────────────────────────────────
   # 1. KV UAMI: fetch Fabric capacity ID + GitHub App config → GITHUB_ENV
   # 2. Fabric UAMI: find-or-create workspace + lakehouse, inject notebook
-  provision:
-    name: "provision: ephemeral workspace & shortcuts"
+  provision-workspace:
+    name: "Provision workspace, environment, shortcuts, notebook"
     if: github.event.action != 'closed'
     needs: [preflight, fetch-prod-state]
     runs-on: ubuntu-latest
@@ -385,16 +385,16 @@ jobs:
           client-id: ${{ vars.AZURE_FABRIC_CLIENT_ID }}
           allow-no-subscriptions: true
 
-      - name: Emit ci/provision pending
+      - name: Emit ci/provision-workspace pending
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           python3 ${{ env.SCRIPTS }}/emit_status.py \
-            --context "ci/provision" \
+            --context "ci/provision-workspace" \
             --state pending \
-            --description "Provision: workspace, environment, shortcuts, notebook" \
+            --description "Provision workspace, environment, shortcuts, notebook" \
             --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Cancel in-flight jobs
@@ -553,9 +553,11 @@ jobs:
           STEP_DERIVE_SHORTCUTS: ${{ steps.derive-shortcuts.outcome }}
           STEP_SEED_SHORTCUTS: ${{ steps.seed-shortcuts.outcome }}
           STEP_GENERATE_NOTEBOOK: ${{ steps.generate-notebook.outcome }}
+          NOTEBOOK_ID: ${{ steps.generate-notebook.outputs.notebook_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: python3 ${{ env.SCRIPTS }}/notify.py --workspace-comment-only
 
-      - name: Emit ci/provision final status
+      - name: Emit ci/provision-workspace final status
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -565,13 +567,13 @@ jobs:
         run: |
           if [ "$JOB_STATUS" = "success" ]; then
             STATE=success
-            DESC="Provision: workspace ready"
+            DESC="Provision workspace ready"
           else
             STATE=failure
-            DESC="Provision: failed — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            DESC="Provision workspace failed — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           fi
           python3 ${{ env.SCRIPTS }}/emit_status.py \
-            --context "ci/provision" \
+            --context "ci/provision-workspace" \
             --state "$STATE" \
             --description "$DESC" \
             --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -582,7 +584,6 @@ jobs:
   static-analysis:
     name: "ci/static-check: static analysis"
     needs: [preflight]
-    if: false  # VD-2084 smoke test — focus on Gate 2
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -814,8 +815,8 @@ jobs:
   # get_columns_in_relation() resolves against real tables in the Spark catalog.
   gate-3-unit:
     name: "ci/unit-tests: unit tests"
-    needs: [provision]
-    if: false  # VD-2084 smoke test — focus on Gate 2
+    needs: [provision-workspace]
+    if: false  # disabled for VD-2075 validation
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-3
@@ -849,9 +850,9 @@ jobs:
         run: |
           python3 ${{ env.SCRIPTS }}/gate_runner.py run-gate \
             --gate 3 \
-            --workspace-id "${{ needs.provision.outputs.ephemeral_workspace_id }}" \
-            --lakehouse-id "${{ needs.provision.outputs.ephemeral_lakehouse_id }}" \
-            --notebook-id "${{ needs.provision.outputs.notebook_id }}" \
+            --workspace-id "${{ needs.provision-workspace.outputs.ephemeral_workspace_id }}" \
+            --lakehouse-id "${{ needs.provision-workspace.outputs.ephemeral_lakehouse_id }}" \
+            --notebook-id "${{ needs.provision-workspace.outputs.notebook_id }}" \
             --head-sha "${{ github.event.pull_request.head.sha }}" \
             --output reports/gate-3.json
 
@@ -910,7 +911,7 @@ jobs:
   # terminal, downloads gate-2.json, emits ci/run commit status.
   gate-2-write:
     name: "ci/run: isolated build"
-    needs: [preflight, provision, fetch-prod-state]
+    needs: [preflight, provision-workspace, fetch-prod-state]
     if: github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
@@ -943,9 +944,9 @@ jobs:
         run: |
           python3 ${{ env.SCRIPTS }}/gate_runner.py run-gate \
             --gate 2 \
-            --workspace-id "${{ needs.provision.outputs.ephemeral_workspace_id }}" \
-            --lakehouse-id "${{ needs.provision.outputs.ephemeral_lakehouse_id }}" \
-            --notebook-id "${{ needs.provision.outputs.notebook_id }}" \
+            --workspace-id "${{ needs.provision-workspace.outputs.ephemeral_workspace_id }}" \
+            --lakehouse-id "${{ needs.provision-workspace.outputs.ephemeral_lakehouse_id }}" \
+            --notebook-id "${{ needs.provision-workspace.outputs.notebook_id }}" \
             --head-sha "${{ github.event.pull_request.head.sha }}" \
             --output reports/gate-2.json
 
@@ -975,8 +976,8 @@ jobs:
   # Skipped (no ci/data-tests status emitted) when Gate 2 fails.
   gate-4-data-test:
     name: "ci/data-tests: data tests"
-    needs: [provision, gate-2-write]
-    if: false  # VD-2084 smoke test — focus on Gate 2
+    needs: [provision-workspace, gate-2-write]
+    if: always() && github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-4
@@ -1009,9 +1010,9 @@ jobs:
         run: |
           python3 ${{ env.SCRIPTS }}/gate_runner.py run-gate \
             --gate 4 \
-            --workspace-id "${{ needs.provision.outputs.ephemeral_workspace_id }}" \
-            --lakehouse-id "${{ needs.provision.outputs.ephemeral_lakehouse_id }}" \
-            --notebook-id "${{ needs.provision.outputs.notebook_id }}" \
+            --workspace-id "${{ needs.provision-workspace.outputs.ephemeral_workspace_id }}" \
+            --lakehouse-id "${{ needs.provision-workspace.outputs.ephemeral_lakehouse_id }}" \
+            --notebook-id "${{ needs.provision-workspace.outputs.notebook_id }}" \
             --head-sha "${{ github.event.pull_request.head.sha }}" \
             --output reports/gate-4.json
 
@@ -1040,8 +1041,8 @@ jobs:
   # Skipped (no ci/data-diff status emitted) when Gate 2 fails.
   gate-5-data-diff:
     name: "ci/data-diff: data-diff"
-    needs: [provision, gate-2-write]
-    if: false  # VD-2084 smoke test — focus on Gate 2
+    needs: [provision-workspace, gate-2-write]
+    if: always() && github.event.action != 'closed'
     timeout-minutes: 12
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-5
@@ -1074,9 +1075,9 @@ jobs:
         run: |
           python3 ${{ env.SCRIPTS }}/gate_runner.py run-gate \
             --gate 5 \
-            --workspace-id "${{ needs.provision.outputs.ephemeral_workspace_id }}" \
-            --lakehouse-id "${{ needs.provision.outputs.ephemeral_lakehouse_id }}" \
-            --notebook-id "${{ needs.provision.outputs.notebook_id }}" \
+            --workspace-id "${{ needs.provision-workspace.outputs.ephemeral_workspace_id }}" \
+            --lakehouse-id "${{ needs.provision-workspace.outputs.ephemeral_lakehouse_id }}" \
+            --notebook-id "${{ needs.provision-workspace.outputs.notebook_id }}" \
             --head-sha "${{ github.event.pull_request.head.sha }}" \
             --output reports/gate-5.json
 
@@ -1170,6 +1171,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GATE_2_RESULT: ${{ needs.gate-2-write.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           python3 - <<'EOF'
           import json, os, sys
@@ -1180,6 +1183,11 @@ jobs:
                   result = json.load(f)
           except (OSError, json.JSONDecodeError):
               result = None
-          body = notify_render.render_gate_5_comment(result)
+          gate_2_result = os.environ.get("GATE_2_RESULT", "")
+          run_url = os.environ.get("RUN_URL", "")
+          if result is None and gate_2_result == "success":
+              body = notify_render.render_gate_5_failed(run_url=run_url)
+          else:
+              body = notify_render.render_gate_5_comment(result)
           pr_comment.upsert("<!-- ci-data-diff -->", body, os.environ["PR_NUMBER"], os.environ["GITHUB_REPOSITORY"])
           EOF

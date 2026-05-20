@@ -1,5 +1,6 @@
 {{ config(materialized='table') }}
 -- ci-test: shortcut derivation scenario (VD-1700)
+-- vd-2084-smoke: batch Livy clone validation
 
 with opportunities as (
     select * from {{ ref('stg_salescloud__opportunity') }}

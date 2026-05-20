@@ -1,4 +1,5 @@
 {{ config(materialized='view') }}
+-- vd-2075: validation bump
 
 with source as (
     select * from {{ source('salescloud', 'opportunity') }}

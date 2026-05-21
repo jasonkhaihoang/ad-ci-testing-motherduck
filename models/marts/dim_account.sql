@@ -22,6 +22,9 @@ final as (
         -- Relationships
         owner_id,
 
+        -- Flags
+        account_type = 'Enterprise' as is_enterprise,  -- VD-2133 validation: schema delta for Gate 5 diff-ack test
+
         -- Audit
         created_date,
         last_modified_date

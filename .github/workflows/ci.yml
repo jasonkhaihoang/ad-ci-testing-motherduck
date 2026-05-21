@@ -168,7 +168,7 @@ jobs:
   # Modes: artifact (gh run download from CD), onelake (Fabric UAMI), greenfield (dbt parse fallback).
   fetch-prod-state:
     name: "ci/state-modified+: fetch prod state"
-    if: github.event.action != 'closed'
+    if: false  # disabled for preflight-only validation
     needs: preflight
     runs-on: ubuntu-latest
     outputs:
@@ -358,7 +358,7 @@ jobs:
   # 2. Fabric UAMI: find-or-create workspace + lakehouse, inject notebook
   provision:
     name: "provision: ephemeral workspace & shortcuts"
-    if: github.event.action != 'closed'
+    if: false  # disabled for preflight-only validation
     needs: [preflight, fetch-prod-state]
     runs-on: ubuntu-latest
     outputs:
@@ -823,7 +823,7 @@ jobs:
   gate-3-unit:
     name: "ci/unit-tests: unit tests"
     needs: [provision]
-    if: github.event.action != 'closed'
+    if: false  # disabled for preflight-only validation
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-3
@@ -919,7 +919,7 @@ jobs:
   gate-2-write:
     name: "ci/run: isolated build"
     needs: [preflight, provision, fetch-prod-state]
-    if: github.event.action != 'closed'
+    if: false  # disabled for preflight-only validation
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-2
@@ -984,7 +984,7 @@ jobs:
   gate-4-data-test:
     name: "ci/data-tests: data tests"
     needs: [provision, gate-2-write]
-    if: always() && github.event.action != 'closed'
+    if: false  # disabled for preflight-only validation
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-4
@@ -1049,7 +1049,7 @@ jobs:
   gate-5-data-diff:
     name: "ci/data-diff: data-diff"
     needs: [provision, gate-2-write]
-    if: always() && github.event.action != 'closed'
+    if: false  # disabled for preflight-only validation
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-5

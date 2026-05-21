@@ -1,4 +1,5 @@
 {{ config(materialized='view') }}
+-- branch: account model local-override (VD-2117 AC1 conflict)
 
 with source as (
     select * from {{ source('salescloud', 'account') }}

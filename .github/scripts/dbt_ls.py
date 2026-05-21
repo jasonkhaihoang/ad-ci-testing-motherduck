@@ -24,6 +24,7 @@ _DBT_LS_CMD = [
     "--select", "state:modified+",
     "--resource-type", "model", "snapshot",
     "--state", "./prod-state",
+    "--defer",
     "--output", "json",
     "--profiles-dir", ".github/profiles",
     "--target", "dbt_fabric_compile",

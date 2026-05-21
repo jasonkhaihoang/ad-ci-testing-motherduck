@@ -30,3 +30,5 @@ renamed as (
 )
 
 select * from renamed
+
+-- VD-2077 stale-skip validation

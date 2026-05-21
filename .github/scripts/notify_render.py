@@ -1055,23 +1055,10 @@ def render_preflight_comment(result: dict | None) -> str:
         + "\n".join(rows)
     )
 
-    # Conflict remediation block: shown only when auto_rebase detected conflicts
-    conflict_footer = ""
-    conflict_files = ar.get("conflict_files") or []
-    if conflict_files:
-        files_list = "\n".join(f"- `{f}`" for f in conflict_files)
-        conflict_footer = (
-            "\n\n**Conflicting files:**\n\n"
-            f"{files_list}\n\n"
-            "**To fix:** `git fetch origin && git rebase origin/main`, resolve conflicts, "
-            "then `git push --force-with-lease`"
-        )
-
     return (
         f"{PREFLIGHT_MARKER}\n"
         f"## `ci/preflight` {heading_icon}\n\n"
-        f"{table}"
-        f"{conflict_footer}\n"
+        f"{table}\n"
     )
 
 

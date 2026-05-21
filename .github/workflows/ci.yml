@@ -85,14 +85,6 @@ jobs:
             --jq '.behind_by' 2>/dev/null || echo "0")
           echo "behind_by=${BEHIND}" >> "$GITHUB_OUTPUT"
 
-          CONFLICT_FILES=""
-          if [ "${BEHIND:-0}" -gt 0 ] 2>/dev/null; then
-            git fetch origin main --quiet || true
-            MERGE_OUT=$(git merge-tree HEAD origin/main 2>&1) || true
-            CONFLICT_FILES=$(echo "${MERGE_OUT}" | awk '/^CONFLICT \(content\): Merge conflict in /{printf "%s%s",(NR==1?"":","),(  $NF)}')
-          fi
-          echo "conflict_files=${CONFLICT_FILES}" >> "$GITHUB_OUTPUT"
-
       - name: Run preflight checks
         id: preflight
         env:
@@ -104,7 +96,6 @@ jobs:
           python3 ${{ env.SCRIPTS }}/preflight.py \
             --branch-name "${{ github.head_ref }}" \
             --behind-by "${{ steps.sync.outputs.behind_by || '0' }}" \
-            --conflict-files "${{ steps.sync.outputs.conflict_files }}" \
             --ci-config-path "ci-config.yml" \
             --output reports/preflight.json \
             --github-output "$GITHUB_OUTPUT"
@@ -183,7 +174,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - run: pip install pyyaml "dbt-core>=1.8" "dbt-fabricspark>=1.8" --quiet
+      - run: pip install pyyaml "dbt-core>=1.8" "vd-dbt-fabricspark==1.9.15" --quiet
 
       - name: Emit Gate 1 pending
         env:
@@ -245,6 +236,7 @@ jobs:
             --select state:modified+ \
             --resource-type model snapshot \
             --state prod-state \
+            --defer \
             --output json \
             --profiles-dir .github/profiles \
             --target dbt_fabric_compile \
@@ -471,7 +463,7 @@ jobs:
 
       - name: Install dbt and parse current branch
         run: |
-          pip install "dbt-core>=1.8" "dbt-fabricspark>=1.8" --quiet
+          pip install "dbt-core>=1.8" "vd-dbt-fabricspark==1.9.15" --quiet
           dbt deps --quiet
           dbt parse --profiles-dir .github/profiles --target dbt_fabric_compile --quiet
 
@@ -601,7 +593,7 @@ jobs:
 
       - name: Install analysis tools
         run: |
-          pip install ruff sqlfluff pyyaml "dbt-core>=1.8" "dbt-fabricspark>=1.8" --quiet
+          pip install ruff sqlfluff pyyaml "dbt-core>=1.8" "vd-dbt-fabricspark==1.9.15" --quiet
           curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz \
             | tar xz -C /usr/local/bin gitleaks
 

@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: stg_salescloud__opportunityhistory
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      Brand-new staging model added for VD-2097 validation. Returns a single
+      synthetic row — its only purpose is to land in the deployment manifest
+      with pre_existing_in_prod: false so Gate 5 routes it to the brand-new
+      bucket. Once VD-2097 is validated this model should be removed.
+    columns:
+      - name: opportunity_history_id
+        description: Synthetic primary key
+      - name: opportunity_id
+      - name: field_name
+      - name: old_value
+      - name: new_value
+      - name: created_at
+      - name: created_by_id

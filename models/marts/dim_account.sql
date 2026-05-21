@@ -22,6 +22,9 @@ final as (
         -- Relationships
         owner_id,
 
+        -- Derived
+        upper(coalesce(billing_country, 'UNKNOWN')) as billing_country_code,
+
         -- Audit
         created_date,
         last_modified_date

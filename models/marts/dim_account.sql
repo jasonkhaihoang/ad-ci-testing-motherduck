@@ -24,6 +24,7 @@ final as (
 
         -- Flags
         account_type = 'Enterprise' as is_enterprise,  -- VD-2133 validation: schema delta for Gate 5 diff-ack test
+        len(account_name) as account_name_length,  -- AC3 test: second column changes diff hash
 
         -- Audit
         created_date,

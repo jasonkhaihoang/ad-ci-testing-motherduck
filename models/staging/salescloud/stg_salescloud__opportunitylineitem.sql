@@ -30,7 +30,10 @@ renamed as (
         SortOrder as sort_order,
 
         -- Audit fields
-        CreatedDate as created_date
+        CreatedDate as created_date,
+
+        -- VD-2080 validation bump
+        lower(ProductCode) as product_code_normalised
 
     from source
 )

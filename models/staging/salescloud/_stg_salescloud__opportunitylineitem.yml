@@ -2,6 +2,8 @@ version: 2
 
 models:
   - name: stg_salescloud__opportunitylineitem
+    meta:
+      owner: jason.khai.hoang@acceleratedata.ai
     description: |
       Staging model for Salesforce opportunity line items representing products/services sold in each opportunity.
       Provides a 1:1 mapping with the source Salesforce OpportunityLineItem object,

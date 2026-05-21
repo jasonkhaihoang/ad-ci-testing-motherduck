@@ -233,6 +233,7 @@ def upload_notebook(workspace_id: str, display_name: str, notebook: dict) -> str
 
 
 def main(template_path: Path | None = None) -> None:
+    raise RuntimeError("VD-2080 validation: deliberate provision failure to test render_provision_failed()")  # noqa: remove before merge
     workspace_id = os.environ["EPHEMERAL_WORKSPACE_ID"]
     workspace_name = os.environ["EPHEMERAL_WORKSPACE_NAME"]
     lakehouse_id = os.environ["EPHEMERAL_LAKEHOUSE_ID"]

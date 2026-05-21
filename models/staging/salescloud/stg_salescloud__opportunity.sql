@@ -42,7 +42,7 @@ renamed as (
     where isdeleted = false  -- Exclude soft-deleted records
 )
 
-SELEC * FROM renamed  -- VD-2077: intentional syntax error to trigger gate-2 failure
+select * from renamed
 -- modified: 2026-05-16
 
 -- validation: VD-2030/VD-2035/VU-1194 2026-05-18

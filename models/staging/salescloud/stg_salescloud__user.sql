@@ -29,6 +29,6 @@ renamed as (
     from source
 )
 
-SELEC * FROM renamed  -- VD-2077: break gate-2
+select * from renamed
 
 -- VD-2077 stale-skip validation

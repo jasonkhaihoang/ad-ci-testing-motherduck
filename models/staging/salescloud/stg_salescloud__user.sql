@@ -26,8 +26,8 @@ renamed as (
         createddate as created_date,
         lastmodifieddate as last_modified_date,
 
-        -- VD-2077 validation: derived column to force state:modified+ build
-        lower(email) as email_normalised
+        -- VD-2077 validation bump
+        cast(1 as int) as validation_flag
 
     from source
 )

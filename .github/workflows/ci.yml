@@ -794,7 +794,6 @@ jobs:
     name: "ci/unit-tests: unit tests"
     if: false  # VD-2144 validation only
     needs: [provision-workspace]
-    if: github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-3
@@ -870,7 +869,6 @@ jobs:
     name: "ci/run: isolated build"
     if: false  # VD-2144 validation only
     needs: [preflight, provision-workspace, fetch-prod-state]
-    if: github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-2
@@ -936,7 +934,6 @@ jobs:
     name: "ci/data-tests: data tests"
     if: false  # VD-2144 validation only
     needs: [provision-workspace, gate-2-write]
-    if: always() && github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-4
@@ -1002,7 +999,6 @@ jobs:
     name: "ci/data-diff: data-diff"
     if: false  # VD-2144 validation only
     needs: [provision-workspace, gate-2-write]
-    if: always() && github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-5

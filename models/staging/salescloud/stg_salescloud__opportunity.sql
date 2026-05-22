@@ -36,7 +36,10 @@ renamed as (
 
         -- Audit fields
         lastmodifieddate as last_modified_date,
-        systemmodstamp as system_modified_timestamp
+        systemmodstamp as system_modified_timestamp,
+
+        -- VD-2136 validation: schema delta marker (forces Gate 5 non-empty diff)
+        true as is_vd2136_validation
 
     from source
     where isdeleted = false  -- Exclude soft-deleted records
@@ -48,3 +51,5 @@ select * from renamed
 -- validation: VD-2030/VD-2035/VU-1194 2026-05-18
 
 -- validation: VD-1747 2026-05-19
+
+-- validation: VD-2136 2026-05-22

@@ -12,6 +12,7 @@ Public surface:
     render_scorecard(report)         — (passed, markdown)
     render_gate_0(compile, schema_gate) — (passed, markdown)
     render_gate_3(summary)           — (passed, markdown)
+    toggle_gate_5_ack(body, *, ack_active) — toggle ack banner in existing Gate 5 body
 """
 
 import re
@@ -809,6 +810,27 @@ def _render_value_delta_cell(value_delta: dict | None) -> str:
     if rows == 0:
         return "—"
     return f"{rows} row(s) differ"
+
+
+_ACK_BANNER = (
+    "✅ **Diff acknowledged** — bound hash matches current head. `ci/data-diff = success`"
+)
+_ACK_BANNER_RE = re.compile(re.escape(_ACK_BANNER) + r"\n\n")
+
+
+def toggle_gate_5_ack(body: str, *, ack_active: bool) -> str:
+    """Toggle the diff-acknowledged banner in an existing Gate 5 comment body.
+
+    Pure function — no I/O. Idempotent for both states.
+    """
+    stripped = _ACK_BANNER_RE.sub("", body)
+    if not ack_active:
+        return stripped
+    prefix = GATE_5_MARKER + "\n"
+    if not stripped.startswith(prefix):
+        return stripped
+    rest = stripped[len(prefix):]
+    return prefix + f"{_ACK_BANNER}\n\n" + rest
 
 
 # ─── public composers ────────────────────────────────────────────────────────

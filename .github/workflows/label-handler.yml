@@ -39,7 +39,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           EVENT_ACTION: ${{ github.event.action }}
           LABEL_NAME: ${{ github.event.label.name }}
@@ -52,7 +52,7 @@ jobs:
           import pr_comment, emit_status, label_binding, notify_render
 
           repo = os.environ["GITHUB_REPOSITORY"]
-          sha = os.environ["GITHUB_SHA"]
+          sha = os.environ["PR_HEAD_SHA"]
           pr_number = os.environ["PR_NUMBER"]
           event_action = os.environ["EVENT_ACTION"]
           label_name = os.environ.get("LABEL_NAME", "")

@@ -39,7 +39,8 @@ renamed as (
         systemmodstamp as system_modified_timestamp,
 
         -- VD-2136: schema delta marker to trigger Gate 5 non-empty diff
-        true as is_vd2136_validation
+        true as is_vd2136_validation,
+        false as is_vd2136_debug_marker
 
     from source
     where isdeleted = false  -- Exclude soft-deleted records

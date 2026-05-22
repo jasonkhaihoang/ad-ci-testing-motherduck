@@ -19,6 +19,8 @@ import urllib.request
 
 def emit_status(repo: str, sha: str, context: str, state: str, description: str, target_url: str) -> None:
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
+    url = f"https://api.github.com/repos/{repo}/statuses/{sha}"
+    print(f"[emit_status] url={url} state={state} token_len={len(token)}", file=sys.stderr)
     payload = json.dumps({
         "state": state,
         "context": context,
@@ -26,7 +28,7 @@ def emit_status(repo: str, sha: str, context: str, state: str, description: str,
         "target_url": target_url,
     }).encode()
     req = urllib.request.Request(
-        f"https://api.github.com/repos/{repo}/statuses/{sha}",
+        url,
         data=payload,
         method="POST",
         headers={
@@ -38,12 +40,17 @@ def emit_status(repo: str, sha: str, context: str, state: str, description: str,
     )
     try:
         with urllib.request.urlopen(req) as resp:
+            body = resp.read().decode(errors="replace")
+            print(f"[emit_status] HTTP {resp.status} response_len={len(body)}", file=sys.stderr)
             if resp.status not in (200, 201):
-                print(f"Unexpected HTTP {resp.status} posting commit status", file=sys.stderr)
+                print(f"Unexpected HTTP {resp.status} posting commit status: {body}", file=sys.stderr)
                 sys.exit(1)
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
         print(f"Failed to post commit status: HTTP {e.code} — {body}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        print(f"Failed to post commit status (network): {e.reason}", file=sys.stderr)
         sys.exit(1)
 
 

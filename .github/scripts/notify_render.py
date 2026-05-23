@@ -18,7 +18,7 @@ Public surface:
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 _RUNNER_PREFIX_RE = re.compile(r"^/home/runner/work/[^/]+/[^/]+/")
 
@@ -71,11 +71,25 @@ def _format_naming_violations_table(violations: list) -> str:
 
 # ─── per-tool renderers ───────────────────────────────────────────────────────
 
-def render_ruff(report) -> tuple[bool, str]:
+def _passed_section(name: str, message: str) -> str:
+    return f"#### {name}\n\n✅ {message}\n"
+
+
+def _failed_section(name: str, summary_line: str, details: str, collapsible_summary: str) -> str:
+    return (
+        f"#### {name}\n\n"
+        f"{summary_line}\n\n"
+        f"<details>\n<summary>{collapsible_summary}</summary>\n\n"
+        f"{details}\n\n"
+        f"</details>\n"
+    )
+
+
+def _section_ruff(report) -> tuple[bool, str]:
     issues = report if isinstance(report, list) else []
     count = len(issues)
     if count == 0:
-        return True, "#### Ruff\n\n✅ No issues\n"
+        return True, _passed_section("Ruff", "No issues")
     sorted_issues = sorted(issues, key=lambda x: x.get("filename", ""))
     lines = [
         f"- `{_strip_runner_prefix(item.get('filename', 'unknown'))}` — `{item.get('code', 'unknown')}` {item.get('message', '')}"
@@ -85,19 +99,12 @@ def render_ruff(report) -> tuple[bool, str]:
     detail = "\n".join(lines)
     if remainder:
         detail += f"\n\n_…and {remainder} more_"
-    section = (
-        f"#### Ruff\n\n"
-        f"❌ {count} issue(s)\n\n"
-        f"<details>\n<summary>Violations</summary>\n\n"
-        f"{detail}\n\n"
-        f"</details>\n"
-    )
-    return False, section
+    return False, _failed_section("Ruff", f"❌ {count} issue(s)", detail, "Violations")
 
 
-def render_sqlfluff(report) -> tuple[bool, str]:
+def _section_sqlfluff(report) -> tuple[bool, str]:
     if report is None:
-        return True, "#### SQLFluff\n\n✅ No violations\n"
+        return True, _passed_section("SQLFluff", "No violations")
     file_results = report if isinstance(report, list) else report.get("files", [])
     file_counts: dict[str, int] = {}
     total = 0
@@ -108,28 +115,21 @@ def render_sqlfluff(report) -> tuple[bool, str]:
             file_counts[filepath] = n
             total += n
     if total == 0:
-        return True, "#### SQLFluff\n\n✅ No violations\n"
+        return True, _passed_section("SQLFluff", "No violations")
     lines = "\n".join(
         f"- `{fp}` — {n} violation(s)"
         for fp, n in sorted(file_counts.items())
     )
-    section = (
-        f"#### SQLFluff\n\n"
-        f"❌ {total} violation(s)\n\n"
-        f"<details>\n<summary>Per-file breakdown</summary>\n\n"
-        f"{lines}\n\n"
-        f"</details>\n"
-    )
-    return False, section
+    return False, _failed_section("SQLFluff", f"❌ {total} violation(s)", lines, "Per-file breakdown")
 
 
-def render_gitleaks(report) -> tuple[bool, str]:
+def _section_gitleaks(report) -> tuple[bool, str]:
     if report is None:
-        return True, "#### Gitleaks\n\n✅ No secrets found\n"
+        return True, _passed_section("Gitleaks", "No secrets found")
     findings = report if isinstance(report, list) else report.get("findings", [])
     count = len(findings)
     if count == 0:
-        return True, "#### Gitleaks\n\n✅ No secrets found\n"
+        return True, _passed_section("Gitleaks", "No secrets found")
     lines = []
     for finding in findings:
         secret_type = finding.get("RuleID") or finding.get("Description", "unknown")
@@ -137,17 +137,10 @@ def render_gitleaks(report) -> tuple[bool, str]:
         line_num = finding.get("StartLine", "?")
         lines.append(f"- `{secret_type}` in `{file_path}` line {line_num}")
     detail = "\n".join(lines)
-    section = (
-        f"#### Gitleaks\n\n"
-        f"❌ **{count} secret(s) found — BLOCK**\n\n"
-        f"<details>\n<summary>Findings (type · file · line)</summary>\n\n"
-        f"{detail}\n\n"
-        f"</details>\n"
-    )
-    return False, section
+    return False, _failed_section("Gitleaks", f"❌ **{count} secret(s) found — BLOCK**", detail, "Findings (type · file · line)")
 
 
-def render_scorecard(report) -> tuple[bool, str]:
+def _section_scorecard(report) -> tuple[bool, str]:
     if not report:
         return False, "#### dbt Scorecard\n\n⚠️ Scorecard unavailable — `dbt parse` may have failed.\n"
     desc = report.get("description_coverage_pct", 0)
@@ -358,7 +351,10 @@ def render_gate_2(result: dict | None) -> str:
 
     head = f"## Isolated Build (ci/run) {_icon(passed)}\n\n{summary_line}\n"
 
+    error = result.get("error") or ""
     sections = [head]
+    if error:
+        sections.append(f"\n> ⚠️ **Abort**: {error[:500]}\n")
     for step_label, step_status, step_models in [
         ("Clone", clone_status, clone_models),
         ("Build", build_status, build_models),
@@ -774,6 +770,31 @@ def _collapsible_schema_gate(report: dict | None) -> str:
     )
 
 
+@dataclass(frozen=True)
+class _ToolRenderer:
+    name: str
+    section_fn: Callable[[Any], tuple[bool, str]]
+    detail_fn: Callable[[Any], str]
+
+
+_TOOL_RENDERERS: dict[str, "_ToolRenderer"] = {
+    "ruff":      _ToolRenderer("Ruff",          _section_ruff,      _detail_ruff),
+    "sqlfluff":  _ToolRenderer("SQLFluff",      _section_sqlfluff,  _detail_sqlfluff),
+    "gitleaks":  _ToolRenderer("Gitleaks",      _section_gitleaks,  _detail_gitleaks),
+    "scorecard": _ToolRenderer("dbt Scorecard", _section_scorecard, _detail_scorecard),
+}
+
+_STATIC_ANALYSIS_TOOL_IDS = ("ruff", "sqlfluff", "gitleaks", "scorecard")
+
+
+# ─── public per-tool shims (preserve notify.py import surface) ────────────────
+
+render_ruff = _section_ruff
+render_sqlfluff = _section_sqlfluff
+render_gitleaks = _section_gitleaks
+render_scorecard = _section_scorecard
+
+
 def _has_schema_diff(schema_delta: dict) -> bool:
     return any(
         schema_delta.get(k)
@@ -907,7 +928,7 @@ def render_workspace_comment(
 - [ ] Open the workspace and run these notebook cells in order:
   1. **Clone** — shallow-clones prod tables into the ephemeral lakehouse
   2. **Run** — `dbt run --select state:modified+` (writes the modified set)
-  3. **Unit Test** — `dbt test --select state:modified+,test_type:unit` against `_empty_build`
+  3. **Unit Test** — `dbt test --select state:modified+,test_type:unit` (after Run — uses tables built in step 2)
   4. **Data Test** — `dbt test --select state:modified+ --store-failures`
 - [ ] Note: `ci/data-diff` runs automatically in CI — no manual cell required
 - [ ] Validate results meet the intent spec acceptance criteria
@@ -972,18 +993,17 @@ def render_gate_0_comment(
     tool_table_rows = ""
     tool_parts = []
     tool_passed_flags = []
-    for value, renderer, detail_fn, label in [
-        (ruff,      render_ruff,      _detail_ruff,      "Ruff"),
-        (sqlfluff,  render_sqlfluff,  _detail_sqlfluff,  "SQLFluff"),
-        (gitleaks,  render_gitleaks,  _detail_gitleaks,  "Gitleaks"),
-        (scorecard, render_scorecard, _detail_scorecard, "dbt Scorecard"),
-    ]:
-        if value is not None:
-            tool_passed, tool_section = renderer(value)
-            tool_passed_flags.append(tool_passed)
-            tool_table_rows += f"| {label} | {_icon(tool_passed)} {detail_fn(value)} |\n"
-            if not tool_passed:
-                tool_parts.append(tool_section)
+    tool_inputs = {"ruff": ruff, "sqlfluff": sqlfluff, "gitleaks": gitleaks, "scorecard": scorecard}
+    for tool_id in _STATIC_ANALYSIS_TOOL_IDS:
+        value = tool_inputs[tool_id]
+        if value is None:
+            continue
+        cfg = _TOOL_RENDERERS[tool_id]
+        tool_passed, tool_section = cfg.section_fn(value)
+        tool_passed_flags.append(tool_passed)
+        tool_table_rows += f"| {cfg.name} | {_icon(tool_passed)} {cfg.detail_fn(value)} |\n"
+        if not tool_passed:
+            tool_parts.append(tool_section)
 
     gate_0_passed, section = render_gate_0(
         compile_result or {},
@@ -1021,6 +1041,11 @@ def render_gate_1_comment(
     Mode / Category / Reason triple plus a remediation footer that tells the
     operator to re-run the job or push a new commit. `platform_error` keys:
     `mode`, `category`, `reason`.
+
+    When closure items carry `closure_source` ('modified' | 'descendant'), a
+    Closure column is added and rows are sorted roots-first (alpha), then
+    descendants (alpha). Greenfield path and items lacking closure_source are
+    unchanged (no Closure column).
     """
     icon = _icon(passed)
     heading = f"## Compile-time Logic (ci/state-modified+) {icon}"
@@ -1056,11 +1081,41 @@ def render_gate_1_comment(
     if not closure:
         return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n_No modified models in scope._\n"
 
-    rows = "\n".join(
-        f"| `{item['name']}` | `{item['materialization']}` |"
-        for item in closure
+    has_closure_source = any("closure_source" in item for item in closure)
+
+    if greenfield or not has_closure_source:
+        rows = "\n".join(
+            f"| `{item['name']}` | `{item['materialization']}` |"
+            for item in closure
+        )
+        table = "| Model | Materialization |\n|-------|----------------|\n" + rows + "\n"
+        note = "_Project-owned models only — dbt package models (e.g. Elementary) are excluded._\n"
+        return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n{table}\n{note}"
+
+    roots = sorted(
+        [item for item in closure if item.get("closure_source") == "modified"],
+        key=lambda x: x["name"],
     )
-    table = "| Model | Materialization |\n|-------|----------------|\n" + rows + "\n"
+    descendants = sorted(
+        [item for item in closure if item.get("closure_source") != "modified"],
+        key=lambda x: x["name"],
+    )
+
+    def _closure_label(item: dict) -> str:
+        if item.get("closure_source") == "modified":
+            return "state:modified (root)"
+        return "state:modified+ (descendant)"
+
+    rows = "\n".join(
+        f"| `{item['name']}` | `{item['materialization']}` | {_closure_label(item)} |"
+        for item in roots + descendants
+    )
+    table = (
+        "| Model | Materialization | Closure |\n"
+        "|-------|----------------|--------|\n"
+        + rows
+        + "\n"
+    )
     note = "_Project-owned models only — dbt package models (e.g. Elementary) are excluded._\n"
     return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n{table}\n{note}"
 

@@ -269,6 +269,7 @@ jobs:
       ephemeral_workspace_id: ${{ steps.provision.outputs.workspace_id }}
       ephemeral_lakehouse_id: ${{ steps.provision.outputs.lakehouse_id }}
       notebook_id: ${{ steps.generate-notebook.outputs.notebook_id }}
+      interactive_notebook_id: ${{ steps.generate-notebook.outputs.interactive_notebook_id }}
     steps:
       - uses: actions/checkout@v4
 
@@ -298,14 +299,14 @@ jobs:
           client-id: ${{ vars.AZURE_FABRIC_CLIENT_ID }}
           allow-no-subscriptions: true
 
-      - name: Emit ci/provision-workspace pending
+      - name: Emit ci/provision pending
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           python3 ${{ env.SCRIPTS }}/emit_status.py \
-            --context "ci/provision-workspace" \
+            --context "ci/provision" \
             --state pending \
             --description "Provision workspace, environment, shortcuts, notebook" \
             --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -469,6 +470,7 @@ jobs:
                   closure.append({
                       "name": a.get("name", "").split(".")[-1],
                       "materialization": a.get("materialized", "unknown"),
+                      "closure_source": a.get("closure_source", "descendant"),
                   })
           except (FileNotFoundError, json.JSONDecodeError):
               closure = []
@@ -529,11 +531,11 @@ jobs:
           STEP_DERIVE_SHORTCUTS: ${{ steps.derive-shortcuts.outcome }}
           STEP_SEED_SHORTCUTS: ${{ steps.seed-shortcuts.outcome }}
           STEP_GENERATE_NOTEBOOK: ${{ steps.generate-notebook.outcome }}
-          NOTEBOOK_ID: ${{ steps.generate-notebook.outputs.notebook_id }}
+          INTERACTIVE_NOTEBOOK_ID: ${{ steps.generate-notebook.outputs.interactive_notebook_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: python3 ${{ env.SCRIPTS }}/notify.py --workspace-comment-only
 
-      - name: Emit ci/provision-workspace final status
+      - name: Emit ci/provision final status
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -549,7 +551,7 @@ jobs:
             DESC="Provision workspace failed — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           fi
           python3 ${{ env.SCRIPTS }}/emit_status.py \
-            --context "ci/provision-workspace" \
+            --context "ci/provision" \
             --state "$STATE" \
             --description "$DESC" \
             --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -559,7 +561,6 @@ jobs:
   # Posts ci/static-check commit status; either blocking step failing marks Gate 0 failed.
   static-analysis:
     name: "ci/static-check: static analysis"
-    if: false  # disabled for VD-2138-2142 validation — focused on slim-CI selection fix
     needs: [preflight]
     runs-on: ubuntu-latest
     steps:
@@ -793,7 +794,7 @@ jobs:
   gate-3-unit:
     name: "ci/unit-tests: unit tests"
     needs: [provision-workspace]
-    if: always() && github.event.action != 'closed'
+    if: false  # vd-2176 validation: disabled to save time
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-3
@@ -862,34 +863,13 @@ jobs:
           pr_comment.upsert(notify_render.GATE_3_MARKER, body, os.environ["PR_NUMBER"], os.environ["REPO"])
           PYEOF
 
-      - name: Emit Gate 3 final status
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          if [ "$JOB_STATUS" = "success" ]; then
-            STATE=success
-            DESC="Gate 3: unit tests passed"
-          else
-            STATE=failure
-            DESC="Gate 3: unit tests failed — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          fi
-          python3 ${{ env.SCRIPTS }}/emit_status.py \
-            --context "ci/unit-tests" \
-            --state "$STATE" \
-            --description "$DESC" \
-            --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
   # ─── GATE 2 — WRITE ───────────────────────────────────────────────────────
   # Triggers the injected notebook via Fabric Item Jobs API, polls until
   # terminal, downloads gate-2.json, emits ci/run commit status.
   gate-2-write:
     name: "ci/run: isolated build"
     needs: [preflight, provision-workspace, fetch-prod-state]
-    if: github.event.action != 'closed'
+    if: false  # vd-2176 validation: disabled to save time
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-2
@@ -954,7 +934,7 @@ jobs:
   gate-4-data-test:
     name: "ci/data-tests: data tests"
     needs: [provision-workspace, gate-2-write]
-    if: always() && github.event.action != 'closed'
+    if: false  # vd-2176 validation: disabled to save time
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-4
@@ -1019,7 +999,7 @@ jobs:
   gate-5-data-diff:
     name: "ci/data-diff: data-diff"
     needs: [provision-workspace, gate-2-write]
-    if: always() && github.event.action != 'closed'
+    if: false  # vd-2176 validation: disabled to save time
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-5

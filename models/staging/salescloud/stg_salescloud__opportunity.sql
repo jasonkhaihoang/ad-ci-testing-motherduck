@@ -58,3 +58,5 @@ select * from renamed
 -- validation: VD-2138-2142 2026-05-22
 
 -- re-trigger: VD-2138-2142 post-main-baseline 2026-05-22
+
+-- VD-xxx validation bump

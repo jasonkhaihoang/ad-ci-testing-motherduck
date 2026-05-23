@@ -39,7 +39,10 @@ renamed as (
         systemmodstamp as system_modified_timestamp,
 
         -- VD-2136: schema delta marker to trigger Gate 5 non-empty diff
-        true as is_vd2136_validation
+        true as is_vd2136_validation,
+
+        -- Calculated: days remaining until close date (negative = overdue)
+        datediff(day, cast(getdate() as date), closedate) as days_until_close
 
     from source
     where isdeleted = false  -- Exclude soft-deleted records

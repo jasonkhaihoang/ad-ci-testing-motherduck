@@ -98,3 +98,7 @@ models:
       - name: system_modified_timestamp
         description: System-maintained modification timestamp
         data_type: timestamp
+
+      - name: days_until_close
+        description: Days remaining until the expected close date (negative values indicate overdue opportunities)
+        data_type: integer

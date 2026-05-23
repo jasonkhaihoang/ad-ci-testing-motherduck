@@ -1,0 +1,63 @@
+version: 2
+
+models:
+  - name: fct_pipeline_by_stage
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      Aggregated sales pipeline metrics grouped by opportunity stage.
+      Provides counts, amounts, and timing metrics per stage for pipeline health reporting.
+    columns:
+      - name: stage_name
+        description: Sales stage name (e.g., Prospecting, Qualification, Closed Won)
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: opportunity_count
+        description: Total number of opportunities in this stage
+        data_type: integer
+        tests:
+          - not_null
+
+      - name: won_count
+        description: Number of closed-won opportunities in this stage
+        data_type: integer
+
+      - name: lost_count
+        description: Number of closed-lost opportunities in this stage
+        data_type: integer
+
+      - name: open_count
+        description: Number of currently open opportunities in this stage
+        data_type: integer
+
+      - name: total_amount
+        description: Sum of opportunity amounts across all opportunities in this stage
+        data_type: decimal
+
+      - name: open_pipeline_amount
+        description: Sum of opportunity amounts for open (not closed) opportunities
+        data_type: decimal
+
+      - name: won_amount
+        description: Sum of opportunity amounts for won opportunities
+        data_type: decimal
+
+      - name: avg_probability
+        description: Average win probability across all opportunities in this stage
+        data_type: decimal
+
+      - name: avg_days_to_close
+        description: Average number of days to close for closed opportunities in this stage
+        data_type: decimal
+
+      - name: earliest_created_date
+        description: Earliest opportunity creation date in this stage
+        data_type: timestamp
+
+      - name: latest_created_date
+        description: Most recent opportunity creation date in this stage
+        data_type: timestamp

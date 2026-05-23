@@ -1147,9 +1147,11 @@ jobs:
                                      "Gate 5: diff acknowledged (hash match)", run_url)
               sys.exit(0)
           else:
+              print(f"[evaluate] posting ci/data-diff=failure for sha={sha[:8]}", flush=True)
               emit_status.emit_status(repo, sha, "ci/data-diff", "failure",
-                                     "Gate 5: non-empty diff — apply diff-acknowledged label to acknowledge",
+                                     "Gate 5: non-empty diff - apply diff-acknowledged label to acknowledge",
                                      run_url)
+              print(f"[evaluate] emit_status returned, calling sys.exit(1)", flush=True)
               sys.exit(1)
           EOF
 

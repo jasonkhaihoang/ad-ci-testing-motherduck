@@ -1,0 +1,65 @@
+version: 2
+
+models:
+  - name: dim_closed_opportunity
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      Dimension table of closed opportunities (won and lost).
+      One row per closed opportunity. Added for VD-2186/VD-2187 validation.
+    columns:
+      - name: opportunity_id
+        description: Primary key - unique identifier for the opportunity
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: account_id
+        description: Foreign key to the account
+        data_type: string
+        tests:
+          - not_null
+
+      - name: owner_id
+        description: Foreign key to the owner (sales rep)
+        data_type: string
+        tests:
+          - not_null
+
+      - name: opportunity_name
+        description: Name of the opportunity
+        data_type: string
+
+      - name: stage_name
+        description: Final stage name at close
+        data_type: string
+
+      - name: opportunity_type
+        description: Type of opportunity
+        data_type: string
+
+      - name: lead_source
+        description: Original source of the lead
+        data_type: string
+
+      - name: amount
+        description: Monetary value of the opportunity
+        data_type: decimal
+
+      - name: close_date
+        description: Date the opportunity was closed
+        data_type: date
+
+      - name: is_won
+        description: True if the opportunity was won, false if lost
+        data_type: boolean
+        tests:
+          - not_null
+
+      - name: created_date
+        description: Timestamp when the opportunity was created
+        data_type: timestamp
+        tests:
+          - not_null

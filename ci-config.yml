@@ -23,9 +23,11 @@ notebook_glob: "intents/**/*.ipynb"         # Glob pattern to find the dbt noteb
 # prod_manifest_source configures how the CI pipeline fetches the production dbt manifest
 # for Slim CI (dbt build --defer --state). If omitted, greenfield fallback is used.
 
-# VD-2185 validation: force greenfield (prod-manifest 401 issue bypassed)
 prod_manifest_source:
-  mode: greenfield
+  mode: artifact
+  workflow: publish-prod-manifest.yml
+  artifact_name: prod-manifest
+  main_branch: main
 
 #   # onelake mode (future — post-CD, see design doc §4.5 ADR):
 #   # workspace_id: <prod-ws-guid>    # production Fabric workspace ID

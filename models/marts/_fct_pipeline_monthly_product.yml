@@ -2,6 +2,10 @@ version: 2
 
 models:
   - name: fct_pipeline_monthly_product
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+      unique_key: ['close_month', 'product_id']
     description: |
       Monthly product-level aggregates showing product performance metrics aggregated by close month.
       Grain: One row per calendar month + product combination.

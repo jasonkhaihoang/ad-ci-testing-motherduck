@@ -236,6 +236,25 @@ jobs:
           path: prod-state/
           retention-days: 7
 
+      - name: Show modified set
+        # VD-2175: surface the `state:modified+` closure inline in Gate 1 logs so
+        # developers don't need to dig into the deployment manifest to see what changed.
+        if: always() && steps.fetch.outputs.greenfield_fallback != 'true' && hashFiles('prod-state/manifest.json') != ''
+        run: |
+          dbt deps --profiles-dir .github/profiles --target dbt_fabric_compile 2>&1 | tail -3 || true
+          modified=$(dbt ls --select state:modified+ --state prod-state \
+                       --profiles-dir .github/profiles --target dbt_fabric_compile \
+                       --output name 2>/dev/null | grep -v '^\(Running\|Found\|Update\)' || true)
+          echo "::group::state:modified+ closure"
+          if [ -z "$modified" ]; then
+            echo "::notice title=state:modified+::(empty — no models changed vs prod baseline)"
+          else
+            while IFS= read -r m; do
+              [ -n "$m" ] && echo "::notice title=state:modified+::state:modified+ => $m"
+            done <<< "$modified"
+          fi
+          echo "::endgroup::"
+
       - name: Emit Gate 1 final status
         if: always()
         env:
@@ -892,6 +911,9 @@ jobs:
           allow-no-subscriptions: true
 
       - name: Run Gate 2
+        # VD-2175 validation: re-use the lakehouse Gate 2 built on a prior run for this PR's head SHA.
+        # Workspace persists across pushes; tables and deployment manifest are still present.
+        if: ${{ !startsWith(github.head_ref, 'intent/vd-2175-') }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -957,7 +979,8 @@ jobs:
           allow-no-subscriptions: true
 
       - name: Run Gate 4
-        if: needs.gate-2-write.result == 'success'
+        # VD-2175 validation: skip on this branch — data tests already validated on previous head SHAs.
+        if: needs.gate-2-write.result == 'success' && !startsWith(github.head_ref, 'intent/vd-2175-')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}

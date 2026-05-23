@@ -358,7 +358,10 @@ def render_gate_2(result: dict | None) -> str:
 
     head = f"## Isolated Build (ci/run) {_icon(passed)}\n\n{summary_line}\n"
 
+    error = result.get("error") or ""
     sections = [head]
+    if error:
+        sections.append(f"\n> ⚠️ **Abort**: {error[:500]}\n")
     for step_label, step_status, step_models in [
         ("Clone", clone_status, clone_models),
         ("Build", build_status, build_models),
@@ -907,7 +910,7 @@ def render_workspace_comment(
 - [ ] Open the workspace and run these notebook cells in order:
   1. **Clone** — shallow-clones prod tables into the ephemeral lakehouse
   2. **Run** — `dbt run --select state:modified+` (writes the modified set)
-  3. **Unit Test** — `dbt test --select state:modified+,test_type:unit` against `_empty_build`
+  3. **Unit Test** — `dbt test --select state:modified+,test_type:unit` (after Run — uses tables built in step 2)
   4. **Data Test** — `dbt test --select state:modified+ --store-failures`
 - [ ] Note: `ci/data-diff` runs automatically in CI — no manual cell required
 - [ ] Validate results meet the intent spec acceptance criteria
@@ -1021,6 +1024,11 @@ def render_gate_1_comment(
     Mode / Category / Reason triple plus a remediation footer that tells the
     operator to re-run the job or push a new commit. `platform_error` keys:
     `mode`, `category`, `reason`.
+
+    When closure items carry `closure_source` ('modified' | 'descendant'), a
+    Closure column is added and rows are sorted roots-first (alpha), then
+    descendants (alpha). Greenfield path and items lacking closure_source are
+    unchanged (no Closure column).
     """
     icon = _icon(passed)
     heading = f"## Compile-time Logic (ci/state-modified+) {icon}"
@@ -1056,11 +1064,41 @@ def render_gate_1_comment(
     if not closure:
         return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n_No modified models in scope._\n"
 
-    rows = "\n".join(
-        f"| `{item['name']}` | `{item['materialization']}` |"
-        for item in closure
+    has_closure_source = any("closure_source" in item for item in closure)
+
+    if greenfield or not has_closure_source:
+        rows = "\n".join(
+            f"| `{item['name']}` | `{item['materialization']}` |"
+            for item in closure
+        )
+        table = "| Model | Materialization |\n|-------|----------------|\n" + rows + "\n"
+        note = "_Project-owned models only — dbt package models (e.g. Elementary) are excluded._\n"
+        return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n{table}\n{note}"
+
+    roots = sorted(
+        [item for item in closure if item.get("closure_source") == "modified"],
+        key=lambda x: x["name"],
     )
-    table = "| Model | Materialization |\n|-------|----------------|\n" + rows + "\n"
+    descendants = sorted(
+        [item for item in closure if item.get("closure_source") != "modified"],
+        key=lambda x: x["name"],
+    )
+
+    def _closure_label(item: dict) -> str:
+        if item.get("closure_source") == "modified":
+            return "state:modified (root)"
+        return "state:modified+ (descendant)"
+
+    rows = "\n".join(
+        f"| `{item['name']}` | `{item['materialization']}` | {_closure_label(item)} |"
+        for item in roots + descendants
+    )
+    table = (
+        "| Model | Materialization | Closure |\n"
+        "|-------|----------------|--------|\n"
+        + rows
+        + "\n"
+    )
     note = "_Project-owned models only — dbt package models (e.g. Elementary) are excluded._\n"
     return f"{GATE_1_MARKER}\n{heading}\n\n{mode_line}\n{table}\n{note}"
 

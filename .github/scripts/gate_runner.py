@@ -248,6 +248,8 @@ def cmd_run_gate(args):
     context = _GATE_CONTEXTS[int(gate)]
 
     # Emit pending
+    no_emit_final = args.no_emit_final
+
     if repo and gh_token:
         _post_github_status(repo, head_sha, context, "pending", f"Gate {gate}: notebook running", run_url, gh_token)
         print(f"Posted {context} pending.", flush=True)
@@ -267,9 +269,8 @@ def cmd_run_gate(args):
     print(f"Job terminal status: {terminal_status}", flush=True)
 
     if terminal_status != "Completed":
-        gh_state = "failure"
-        if repo and gh_token:
-            _post_github_status(repo, head_sha, context, gh_state, f"Gate {gate}: job {terminal_status}", run_url, gh_token)
+        if repo and gh_token and not no_emit_final:
+            _post_github_status(repo, head_sha, context, "failure", f"Gate {gate}: job {terminal_status}", run_url, gh_token)
         print(f"Gate {gate} failed: job status {terminal_status}", file=sys.stderr)
         sys.exit(1)
 
@@ -289,7 +290,7 @@ def cmd_run_gate(args):
     try:
         result = _download_gate_result(workspace_id, lakehouse_id, head_sha, gate, storage_token)
     except urllib.error.HTTPError as e:
-        if repo and gh_token:
+        if repo and gh_token and not no_emit_final:
             _post_github_status(repo, head_sha, context, "failure", f"Gate {gate}: result file not found (HTTP {e.code})", run_url, gh_token)
         print(f"Gate {gate} failed: result file not found (HTTP {e.code})", file=sys.stderr)
         sys.exit(1)
@@ -325,7 +326,7 @@ def cmd_run_gate(args):
     gh_state = map_gate_status(overall_status)
 
     description = f"Gate {gate}: {overall_status}"
-    if repo and gh_token:
+    if repo and gh_token and not no_emit_final:
         _post_github_status(repo, head_sha, context, gh_state, description, run_url, gh_token)
 
     print(f"Gate {gate} result: {overall_status} ({item_count} {item_label}) → GitHub status: {gh_state}", flush=True)
@@ -352,6 +353,8 @@ def main():
     p.add_argument("--notebook-id", required=True)
     p.add_argument("--head-sha", required=True)
     p.add_argument("--output", default=None)
+    p.add_argument("--no-emit-final", action="store_true", default=False,
+                   help="Skip posting the final success/failure status; only post pending.")
 
     args = parser.parse_args()
     {"run-gate": cmd_run_gate}[args.command](args)

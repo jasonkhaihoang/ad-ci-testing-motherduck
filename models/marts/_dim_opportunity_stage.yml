@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: dim_opportunity_stage
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      Dimension table of distinct Salesforce opportunity stages.
+      One row per stage name with derived flags for closed and won states.
+      Added for VD-2185 gate-5 validation to provide a new table baseline for
+      data-diff comparison.
+    columns:
+      - name: opportunity_stage_id
+        description: Primary key — the stage name used as a natural key
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: stage_name
+        description: Salesforce stage name (e.g., Prospecting, Closed Won, Closed Lost)
+        data_type: string
+        tests:
+          - not_null
+
+      - name: is_closed
+        description: Whether this stage represents a terminal (closed) state
+        data_type: boolean
+        tests:
+          - not_null
+
+      - name: is_won_stage
+        description: True only for Closed Won; false for all other stages including open
+        data_type: boolean
+        tests:
+          - not_null

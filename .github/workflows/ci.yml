@@ -236,6 +236,25 @@ jobs:
           path: prod-state/
           retention-days: 7
 
+      - name: Show modified set
+        # VD-2175: surface the `state:modified+` closure inline in Gate 1 logs so
+        # developers don't need to dig into the deployment manifest to see what changed.
+        if: always() && steps.fetch.outputs.greenfield_fallback != 'true' && hashFiles('prod-state/manifest.json') != ''
+        run: |
+          dbt deps --profiles-dir .github/profiles --target dbt_fabric_compile 2>&1 | tail -3 || true
+          modified=$(dbt ls --select state:modified+ --state prod-state \
+                       --profiles-dir .github/profiles --target dbt_fabric_compile \
+                       --output name 2>/dev/null | grep -v '^\(Running\|Found\|Update\)' || true)
+          echo "::group::state:modified+ closure"
+          if [ -z "$modified" ]; then
+            echo "::notice title=state:modified+::(empty — no models changed vs prod baseline)"
+          else
+            while IFS= read -r m; do
+              [ -n "$m" ] && echo "::notice title=state:modified+::state:modified+ => $m"
+            done <<< "$modified"
+          fi
+          echo "::endgroup::"
+
       - name: Emit Gate 1 final status
         if: always()
         env:
@@ -269,6 +288,7 @@ jobs:
       ephemeral_workspace_id: ${{ steps.provision.outputs.workspace_id }}
       ephemeral_lakehouse_id: ${{ steps.provision.outputs.lakehouse_id }}
       notebook_id: ${{ steps.generate-notebook.outputs.notebook_id }}
+      interactive_notebook_id: ${{ steps.generate-notebook.outputs.interactive_notebook_id }}
     steps:
       - uses: actions/checkout@v4
 
@@ -298,14 +318,14 @@ jobs:
           client-id: ${{ vars.AZURE_FABRIC_CLIENT_ID }}
           allow-no-subscriptions: true
 
-      - name: Emit ci/provision-workspace pending
+      - name: Emit ci/provision pending
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           python3 ${{ env.SCRIPTS }}/emit_status.py \
-            --context "ci/provision-workspace" \
+            --context "ci/provision" \
             --state pending \
             --description "Provision workspace, environment, shortcuts, notebook" \
             --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -469,6 +489,7 @@ jobs:
                   closure.append({
                       "name": a.get("name", "").split(".")[-1],
                       "materialization": a.get("materialized", "unknown"),
+                      "closure_source": a.get("closure_source", "descendant"),
                   })
           except (FileNotFoundError, json.JSONDecodeError):
               closure = []
@@ -529,11 +550,11 @@ jobs:
           STEP_DERIVE_SHORTCUTS: ${{ steps.derive-shortcuts.outcome }}
           STEP_SEED_SHORTCUTS: ${{ steps.seed-shortcuts.outcome }}
           STEP_GENERATE_NOTEBOOK: ${{ steps.generate-notebook.outcome }}
-          NOTEBOOK_ID: ${{ steps.generate-notebook.outputs.notebook_id }}
+          INTERACTIVE_NOTEBOOK_ID: ${{ steps.generate-notebook.outputs.interactive_notebook_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: python3 ${{ env.SCRIPTS }}/notify.py --workspace-comment-only
 
-      - name: Emit ci/provision-workspace final status
+      - name: Emit ci/provision final status
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -549,7 +570,7 @@ jobs:
             DESC="Provision workspace failed — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           fi
           python3 ${{ env.SCRIPTS }}/emit_status.py \
-            --context "ci/provision-workspace" \
+            --context "ci/provision" \
             --state "$STATE" \
             --description "$DESC" \
             --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -559,7 +580,6 @@ jobs:
   # Posts ci/static-check commit status; either blocking step failing marks Gate 0 failed.
   static-analysis:
     name: "ci/static-check: static analysis"
-    if: false  # disabled for VD-2138-2142 validation — focused on slim-CI selection fix
     needs: [preflight]
     runs-on: ubuntu-latest
     steps:
@@ -787,13 +807,14 @@ jobs:
             --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   # ─── GATE 3 — UNIT TESTS ──────────────────────────────────────────────────
-  # dbt unit tests against state:modified+ models with mocked YAML inputs.
-  # Runs in Fabric ephemeral workspace (in parallel with Gate 2 — no data dependency) so that
-  # get_columns_in_relation() resolves against real tables in the Spark catalog.
+  # dbt unit tests against the deployment-manifest model name list with mocked YAML inputs.
+  # Runs in Fabric ephemeral workspace after Gate 2 succeeds (parallel with Gates 4 and 5).
+  # get_columns_in_relation() resolves against real tables Gate 2 has materialised + provisioned source shortcuts.
+  # See docs/adr/0002-gate-3-after-gate-2.md.
   gate-3-unit:
     name: "ci/unit-tests: unit tests"
-    needs: [provision-workspace]
-    if: always() && github.event.action != 'closed'
+    needs: [provision-workspace, gate-2-write]
+    if: github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-3
@@ -818,6 +839,7 @@ jobs:
           allow-no-subscriptions: true
 
       - name: Run Gate 3
+        if: needs.gate-2-write.result == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -861,27 +883,6 @@ jobs:
           body = notify_render.render_gate_3_comment(result)
           pr_comment.upsert(notify_render.GATE_3_MARKER, body, os.environ["PR_NUMBER"], os.environ["REPO"])
           PYEOF
-
-      - name: Emit Gate 3 final status
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          if [ "$JOB_STATUS" = "success" ]; then
-            STATE=success
-            DESC="Gate 3: unit tests passed"
-          else
-            STATE=failure
-            DESC="Gate 3: unit tests failed — see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          fi
-          python3 ${{ env.SCRIPTS }}/emit_status.py \
-            --context "ci/unit-tests" \
-            --state "$STATE" \
-            --description "$DESC" \
-            --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   # ─── GATE 2 — WRITE ───────────────────────────────────────────────────────
   # Triggers the injected notebook via Fabric Item Jobs API, polls until

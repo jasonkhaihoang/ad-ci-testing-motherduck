@@ -55,3 +55,5 @@ select * from renamed
 -- validation: VD-2138-2142 2026-05-22
 
 -- re-trigger: VD-2138-2142 post-main-baseline 2026-05-22
+
+-- validation: VD-2175 gate-3 after gate-2 2026-05-23

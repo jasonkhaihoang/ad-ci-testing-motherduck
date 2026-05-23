@@ -358,7 +358,10 @@ def render_gate_2(result: dict | None) -> str:
 
     head = f"## Isolated Build (ci/run) {_icon(passed)}\n\n{summary_line}\n"
 
+    error = result.get("error") or ""
     sections = [head]
+    if error:
+        sections.append(f"\n> ⚠️ **Abort**: {error[:500]}\n")
     for step_label, step_status, step_models in [
         ("Clone", clone_status, clone_models),
         ("Build", build_status, build_models),
@@ -907,7 +910,7 @@ def render_workspace_comment(
 - [ ] Open the workspace and run these notebook cells in order:
   1. **Clone** — shallow-clones prod tables into the ephemeral lakehouse
   2. **Run** — `dbt run --select state:modified+` (writes the modified set)
-  3. **Unit Test** — `dbt test --select state:modified+,test_type:unit` against `_empty_build`
+  3. **Unit Test** — `dbt test --select state:modified+,test_type:unit` (after Run — uses tables built in step 2)
   4. **Data Test** — `dbt test --select state:modified+ --store-failures`
 - [ ] Note: `ci/data-diff` runs automatically in CI — no manual cell required
 - [ ] Validate results meet the intent spec acceptance criteria

@@ -25,6 +25,8 @@ env:
 
 jobs:
   dbt-project-evaluate:
+    # VD-2175 validation: skip advisory quality run on the gate-ordering test branch
+    if: ${{ !startsWith(github.head_ref, 'intent/vd-2175-') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -42,7 +42,7 @@ renamed as (
         true as is_vd2136_validation,
 
         -- Calculated: days remaining until close date (negative = overdue)
-        datediff(day, cast(getdate() as date), closedate) as days_until_close
+        datediff(day, current_date(), closedate) as days_until_close
 
     from source
     where isdeleted = false  -- Exclude soft-deleted records

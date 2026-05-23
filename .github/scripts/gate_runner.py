@@ -140,35 +140,6 @@ def _post_github_status(repo: str, sha: str, context: str, state: str, descripti
         raise
 
 
-def _trigger_notebook_job(workspace_id: str, notebook_id: str, body: dict, token: str) -> str:
-    """POST to Item Jobs API; return the job instance ID."""
-    url = f"{FABRIC_API}/workspaces/{workspace_id}/items/{notebook_id}/jobs/instances?jobType=RunNotebook"
-    data = json.dumps(body).encode()
-    req = urllib.request.Request(url, data=data, method="POST")
-    req.add_header("Authorization", f"Bearer {token}")
-    req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req) as resp:
-            raw = resp.read()
-            parsed = json.loads(raw) if raw else {}
-            job_id = parsed.get("id") or parsed.get("jobInstanceId")
-            if not job_id:
-                # Try Location header convention for 202 responses
-                raise RuntimeError(f"No job ID in response: {parsed}")
-            return job_id
-    except urllib.error.HTTPError as e:
-        body_text = e.read().decode(errors="replace")
-        # 202 Accepted — parse Location header for job ID
-        if e.code == 202:
-            location = e.headers.get("Location", "")
-            # Location: .../jobs/instances/{job_id}
-            job_id = location.rstrip("/").split("/")[-1]
-            if job_id:
-                return job_id
-        print(f"HTTP {e.code} triggering notebook job: {body_text}", file=sys.stderr)
-        raise
-
-
 def _trigger_notebook_job_v2(workspace_id: str, notebook_id: str, body: dict, token: str) -> str:
     """POST to Item Jobs API; handle 202 Accepted with Location header."""
     url = f"{FABRIC_API}/workspaces/{workspace_id}/items/{notebook_id}/jobs/instances?jobType=RunNotebook"

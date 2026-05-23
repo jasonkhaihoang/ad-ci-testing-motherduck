@@ -814,7 +814,7 @@ jobs:
   gate-3-unit:
     name: "ci/unit-tests: unit tests"
     needs: [provision-workspace, gate-2-write]
-    if: false  # VD-2185 validation: skipped to save resources
+    if: github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-3
@@ -955,7 +955,7 @@ jobs:
   gate-4-data-test:
     name: "ci/data-tests: data tests"
     needs: [provision-workspace, gate-2-write]
-    if: false  # VD-2185 validation: skipped to save resources
+    if: always() && github.event.action != 'closed'
     timeout-minutes: 130
     concurrency:
       group: pr-${{ github.event.pull_request.number }}-gate-4
@@ -1074,12 +1074,22 @@ jobs:
           python3 - <<'EOF'
           import json, os, subprocess, sys
           sys.path.insert(0, ".github/scripts")
-          import pr_comment, emit_status, label_binding
+          import pr_comment, label_binding
 
           repo = os.environ["GITHUB_REPOSITORY"]
           sha = os.environ["GITHUB_SHA"]
           pr_number = os.environ["PR_NUMBER"]
           run_url = f"{os.environ['GITHUB_SERVER_URL']}/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+
+          def _emit(state, description):
+              subprocess.run(
+                  ["python3", ".github/scripts/emit_status.py",
+                   "--context", "ci/data-diff",
+                   "--state", state,
+                   "--description", description,
+                   "--target-url", run_url],
+                  check=True,
+              )
 
           try:
               with open("reports/gate-5.json") as f:
@@ -1088,20 +1098,16 @@ jobs:
               result = None
 
           if result is None:
-              emit_status.emit_status(repo, sha, "ci/data-diff", "failure",
-                                     "Gate 5: result not available — notebook may not have completed",
-                                     run_url)
+              _emit("failure", "Gate 5: result not available - notebook may not have completed")
               sys.exit(1)
 
           if result.get("overall_status") == "pass":
-              emit_status.emit_status(repo, sha, "ci/data-diff", "success",
-                                     "Gate 5: no diff against prod", run_url)
+              _emit("success", "Gate 5: no diff against prod")
               sys.exit(0)
 
           latest_hash = result.get("latest_hash")
           if not latest_hash:
-              emit_status.emit_status(repo, sha, "ci/data-diff", "failure",
-                                     "Gate 5: non-empty diff detected", run_url)
+              _emit("failure", "Gate 5: non-empty diff detected")
               sys.exit(1)
 
           marker_comment_id = pr_comment.find_by_marker(label_binding.MARKER, pr_number, repo)
@@ -1143,15 +1149,10 @@ jobs:
                       json.dump(g5, f)
               except (OSError, KeyError):
                   pass
-              emit_status.emit_status(repo, sha, "ci/data-diff", "success",
-                                     "Gate 5: diff acknowledged (hash match)", run_url)
+              _emit("success", "Gate 5: diff acknowledged (hash match)")
               sys.exit(0)
           else:
-              print(f"[evaluate] posting ci/data-diff=failure for sha={sha[:8]}", flush=True)
-              emit_status.emit_status(repo, sha, "ci/data-diff", "failure",
-                                     "Gate 5: non-empty diff - apply diff-acknowledged label to acknowledge",
-                                     run_url)
-              print(f"[evaluate] emit_status returned, calling sys.exit(1)", flush=True)
+              _emit("failure", "Gate 5: non-empty diff - apply diff-acknowledged label to acknowledge")
               sys.exit(1)
           EOF
 

@@ -1,0 +1,93 @@
+version: 2
+
+models:
+  - name: fct_pipeline_by_quarter
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      **Pipeline summary by fiscal quarter** — aggregates sales pipeline metrics grouped
+      by fiscal year and quarter derived from opportunity close dates.
+
+      **Grain:** One row per fiscal_year + fiscal_quarter combination.
+
+      **Business Purpose:** Enables quarterly pipeline reporting, win-rate trending,
+      and revenue forecasting across fiscal periods.
+
+      **Notes:**
+      - Excludes opportunities with null close_date (no fiscal period derivable)
+      - Win rate is computed only among closed opportunities (won + lost)
+
+    columns:
+      - name: fiscal_year
+        description: Calendar year of the close date (e.g., 2026)
+        data_type: integer
+        tests:
+          - not_null
+
+      - name: fiscal_quarter
+        description: Quarter label derived from close date month (Q1, Q2, Q3, Q4)
+        data_type: string
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Q1', 'Q2', 'Q3', 'Q4']
+
+      - name: fiscal_period
+        description: Concatenated period label (e.g., 2026-Q1)
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: opportunity_count
+        description: Total number of opportunities with a close date in this fiscal period
+        data_type: integer
+        tests:
+          - not_null
+
+      - name: won_count
+        description: Number of won (closed won) opportunities in this fiscal period
+        data_type: integer
+        tests:
+          - not_null
+
+      - name: lost_count
+        description: Number of lost (closed lost) opportunities in this fiscal period
+        data_type: integer
+        tests:
+          - not_null
+
+      - name: open_count
+        description: Number of still-open opportunities with a close date in this fiscal period
+        data_type: integer
+        tests:
+          - not_null
+
+      - name: win_rate
+        description: |
+          Ratio of won opportunities to all closed opportunities (won + lost).
+          Null if no closed opportunities exist in the period. Range: 0.0–1.0.
+        data_type: decimal
+
+      - name: total_amount
+        description: Sum of opportunity amounts in this fiscal period (0 if all null)
+        data_type: decimal
+        tests:
+          - not_null
+
+      - name: won_amount
+        description: Sum of amounts for won opportunities in this fiscal period
+        data_type: decimal
+        tests:
+          - not_null
+
+      - name: open_pipeline_amount
+        description: Sum of amounts for still-open opportunities in this fiscal period
+        data_type: decimal
+        tests:
+          - not_null
+
+      - name: avg_probability
+        description: Average probability across all opportunities in this fiscal period
+        data_type: decimal

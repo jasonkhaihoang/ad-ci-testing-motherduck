@@ -1062,6 +1062,14 @@ jobs:
             --output reports/gate-5.json \
             --no-emit-final
 
+      - name: Inject session-error fixture (VD-2199/2200/2201 validation)
+        if: always()
+        run: |
+          mkdir -p reports
+          cat > reports/gate-5.json <<'EOF'
+          {"gate":"5","overall_status":"error","artifacts":[],"session_error":"Gate 5 session creation failed: HTTP Error 500: Internal Server Error"}
+          EOF
+
       - name: Evaluate diff-acknowledged binding and emit ci/data-diff status
         if: always()
         env:

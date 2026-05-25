@@ -478,6 +478,15 @@ def render_gate_5(result: dict | None) -> str:
 
     head = f"## Data-Diff vs Prod (ci/data-diff) {_icon(passed)}\n\n"
 
+    session_error = result.get("session_error")
+    if session_error:
+        return (
+            head
+            + "**Session error** — Gate 5 could not start a Livy session.\n\n"
+            + f"> {session_error}\n\n"
+            + "Re-run the `ci/data-diff` job to retry.\n"
+        )
+
     if not artifacts:
         return head + "_No artifacts in diff scope._\n"
 

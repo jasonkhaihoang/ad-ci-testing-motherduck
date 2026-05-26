@@ -1,5 +1,5 @@
 {{ config(materialized='view') }}
--- main: account model v2 (VD-2117 advance)
+-- main: account model v2 (VD-2117 advance) — validate VD-2219 ci-sha fix
 
 with source as (
     select * from {{ source('salescloud', 'account') }}

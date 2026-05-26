@@ -1086,13 +1086,16 @@ jobs:
           run_url = f"{os.environ['GITHUB_SERVER_URL']}/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
 
           def _emit(state, description):
+              print(f"DEBUG _emit: state={state!r} sha={sha!r}", file=sys.stderr, flush=True)
               emit_status.emit_status(repo, sha, "ci/data-diff", state, description, run_url)
+              print(f"DEBUG _emit: done", file=sys.stderr, flush=True)
 
           try:
               with open("reports/gate-5.json") as f:
                   result = json.load(f)
           except (OSError, json.JSONDecodeError):
               result = None
+          print(f"DEBUG: result={result is not None} overall_status={result.get('overall_status') if result else None} latest_hash={bool(result.get('latest_hash')) if result else None}", file=sys.stderr, flush=True)
 
           if result is None:
               _emit("failure", "Gate 5: result not available - notebook may not have completed")

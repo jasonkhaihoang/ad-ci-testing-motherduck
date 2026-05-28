@@ -1,0 +1,28 @@
+# E2E test entry point for /test-ci-duckdb slash command.
+# STUB — wired in VD-2149.
+# See docs/design/DuckDB/duckdb-quack-ci-workflow-design.md §E2E Test Design.
+name: E2E — DuckDB CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'E2E scenario to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - greenfield
+          - incremental-modify
+          - incremental-staging
+      branch:
+        description: 'Branch to test (default: PR head)'
+        required: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stub — not yet implemented
+        run: echo "DuckDB E2E not yet wired. See VD-2149."

@@ -1,0 +1,35 @@
+# Publishes the prod dbt manifest artifact on push to main.
+# Uses dbt_motherduck_compile (offline, database: prd) — no live MotherDuck connection required.
+# Gate 1 of any subsequent PR downloads this artifact as the state:modified+ baseline.
+# See docs/design/DuckDB/duckdb-motherduck-ci-workflow-design.md §prod-state-manifest
+name: Publish Prod Manifest (DuckDB)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt-duckdb
+        run: pip install "dbt-duckdb" "duckdb==1.5.2" --quiet
+
+      - name: Parse dbt project
+        run: |
+          dbt deps --quiet
+          dbt parse --profiles-dir .github/profiles --profile dbt_motherduck_compile --target compile --quiet
+
+      - name: Upload prod-manifest-duckdb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-manifest-duckdb
+          path: target/manifest.json
+          retention-days: 90

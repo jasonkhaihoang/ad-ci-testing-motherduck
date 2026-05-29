@@ -56,3 +56,4 @@ renamed as (
 select * from renamed
 
 -- VD-2229 validation bump
+-- ci: incremental-staging test

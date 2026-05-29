@@ -2,7 +2,7 @@ name: 'sales_pipeline'
 version: '1.0.0'
 config-version: 2
 
-profile: 'dbt_fab_spark'
+profile: 'dbt_motherduck_compile'
 
 model-paths: ["models"]
 analysis-paths: ["analyses"]
@@ -15,13 +15,6 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
-dispatch:
-  - macro_namespace: elementary
-    search_order:
-      - sales_pipeline
-      - elementary_fabricspark
-      - elementary
-
 models:
   sales_pipeline:
     staging:
@@ -32,9 +25,6 @@ models:
     marts:
       +materialized: table
       +schema: mrt
-  elementary:
-    +schema: elementary
-    +tags: ["elementary"]
 
 seeds:
   sales_pipeline:

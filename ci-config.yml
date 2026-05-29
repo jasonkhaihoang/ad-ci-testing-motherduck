@@ -6,6 +6,12 @@ platform: motherduck
 # Short slug identifying this domain's intent context.
 intent_slug: dev-sales-pipeline
 
+# Human-readable domain name used in status labels and comments.
+domain: sales-pipeline
+
+# KV secret name for the Anthropic Claude API key (used by design-drift gate).
+claude_api_key_kv_name: claude-api-key
+
 # Production MotherDuck database name.
 prod_db_name: prd
 

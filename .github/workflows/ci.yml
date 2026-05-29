@@ -966,6 +966,9 @@ jobs:
           runner_io.set_env("MOTHERDUCK_TOKEN", token)
           EOF
 
+      - name: dbt deps
+        run: dbt deps --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
+
       - name: Run dbt unit tests
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

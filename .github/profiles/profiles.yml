@@ -12,9 +12,6 @@ dbt_motherduck_compile:
     compile:
       type: duckdb
       path: ':memory:'
-      attach:
-        - path: ':memory:'
-          alias: prd  # allows database: prd with in-memory path (dbt-duckdb>=1.10 attach bypass)
       database: prd          # matches MotherDuck production database name
       schema: main
 

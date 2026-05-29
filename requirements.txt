@@ -1,2 +1,2 @@
 dbt-core
-vd-dbt-fabricspark
+dbt-duckdb

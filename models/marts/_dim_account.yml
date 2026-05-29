@@ -7,7 +7,8 @@ models:
       One row per account (SCD Type 1 - current state only).
       Enables slicing pipeline metrics by customer attributes, industry, and location.
     config:
-      owner: 'sales-pipeline'
+      meta:
+        owner: 'sales-pipeline'
     columns:
       - name: account_id
         description: Primary key - unique identifier for the account

@@ -103,6 +103,13 @@ def cmd_run_gate(args) -> int:
         "HEAD_SHA_SHORT": args.head_sha_short,
     }
 
+    subprocess.run(
+        ["dbt", "deps", "--profiles-dir", args.profiles_dir, "--profile", PROFILE, "--quiet"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
     cmd = [
         "dbt", "test",
         "--store-failures",

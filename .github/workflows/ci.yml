@@ -800,6 +800,13 @@ jobs:
 
           dbt deps --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
 
+          dbt seed \
+            --full-refresh \
+            --profiles-dir .github/profiles \
+            --profile dbt_motherduck_ci \
+            --target ci \
+            --no-use-colors 2>&1 || true
+
           SELECT=$(cat reports/gate2_select.txt)
           dbt run \
             --select $SELECT \

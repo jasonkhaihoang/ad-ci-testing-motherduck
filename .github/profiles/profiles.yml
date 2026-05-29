@@ -1,41 +1,24 @@
-# CI dbt profiles for the six-gate ladder.
-# Profile name (dbt_fab_spark) matches domain repo dbt_project.yml — no project file changes needed.
-# CI workflow always passes --profiles-dir .github/profiles; no collision with ~/.dbt/profiles.yml.
-dbt_fab_spark:
-  outputs:
-    # Gates 0 + 1: compile-only Fabric target. Macros resolve to Fabric T-SQL.
-    # Dummy GUIDs — no DB connection made for dbt compile / dbt ls / dbt parse.
-    dbt_fabric_compile:
-      type: fabricspark
-      method: az_cli
-      workspaceid: "00000000-0000-0000-0000-000000000000"
-      lakehouse: "00000000-0000-0000-0000-000000000000"
-      lakehouseid: "00000000-0000-0000-0000-000000000000"
-      schema: dbt_compile
-      spark_config:
-        name: "dbt_ci_compile"
+# dbt-duckdb profiles for the MotherDuck CI bundle.
+#
+# Two profiles ship:
+#   dbt_motherduck_compile — offline, renders database: prd (Gates 0, 1, prod-state publish)
+#   dbt_motherduck_ci      — live, MotherDuck-backed (Gates 2, 3, 4)
+#
+# CI workflows always pass --profiles-dir .github/profiles; no collision with ~/.dbt/profiles.yml.
 
-    # Gates 2, 3, 4, 5: real row execution against the ephemeral Fabric workspace.
-    # method: livy is the only valid Fabric connection method.
-    # authentication: fabric_notebook uses notebookutils.credentials.getToken(),
-    # which is available in the Fabric notebook runtime (unlike az_cli which requires az login).
-    # Env vars set by run_dbt_job → setup_environment() before dbt is spawned.
-    ephemeral_ci:
-      authentication: fabric_notebook
-      endpoint: https://msitapi.fabric.microsoft.com/v1
-      workspaceid: "{{ env_var('WORKSPACE_ID') }}"
-      workspace_name: "{{ env_var('WORKSPACE_NAME') }}"
-      lakehouse: "{{ env_var('LAKEHOUSE') }}"
-      lakehouseid: "{{ env_var('LAKEHOUSE_ID') }}"
-      lakehouse_schemas_enabled: true
-      schema: "{{ env_var('SCHEMA') }}"
-      method: livy
-      type: fabricspark
-      reuse_livy_session: true
-      session_id_file: "{{ env_var('SESSION_ID_FILE', '') }}"
-      spark_config:
-        name: "dbt_ci_session"
-      connect_retries: 2
-      connect_timeout: 500
-      threads: 10
-  target: dbt_fabric_compile
+dbt_motherduck_compile:
+  target: compile
+  outputs:
+    compile:
+      type: duckdb
+      path: ':memory:'
+      database: prd          # matches MotherDuck production database name
+      schema: main
+
+dbt_motherduck_ci:
+  target: ci
+  outputs:
+    ci:
+      type: duckdb
+      path: "md:pr_{{ env_var('PR_NUMBER') }}_{{ env_var('HEAD_SHA_SHORT') }}?motherduck_token={{ env_var('MOTHERDUCK_TOKEN') }}"
+      schema: main

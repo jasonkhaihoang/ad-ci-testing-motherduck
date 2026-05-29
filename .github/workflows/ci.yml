@@ -791,12 +791,14 @@ jobs:
 
           with open(f"reports/deployment-manifest-{os.environ['HEAD_SHA']}.json") as f:
               dm = json.load(f)
-          names = [a["name"] for a in dm.get("artifacts", [])]
+          names = [f"+{a['name']}" for a in dm.get("artifacts", [])]
           select_arg = " ".join(names) if names else "state:modified+"
           print(f"Selecting models: {select_arg}")
           with open("reports/gate2_select.txt", "w") as f:
               f.write(select_arg)
           EOF
+
+          dbt deps --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
 
           SELECT=$(cat reports/gate2_select.txt)
           dbt run \

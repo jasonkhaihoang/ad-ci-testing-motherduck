@@ -30,3 +30,4 @@ final as (
 )
 
 select * from final
+-- vd-2264 e2e validation

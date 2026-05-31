@@ -51,23 +51,173 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run ${{ matrix.scenario }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dbt-duckdb
+        run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb==1.9.3" "duckdb==1.5.2" --quiet
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_KV_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch MOTHERDUCK_TOKEN
+        env:
+          AZURE_KEYVAULT_URL: ${{ vars.AZURE_KEYVAULT_URL }}
+          MOTHERDUCK_TOKEN_KV_NAME: ${{ vars.MOTHERDUCK_TOKEN_KV_NAME }}
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, '.github/scripts')
+          import kv_utils, runner_io
+          token_kv_name = os.environ.get("MOTHERDUCK_TOKEN_KV_NAME") or "motherduck-ci-token"
+          token = kv_utils.get_secret(token_kv_name)
+          runner_io.mask(token)
+          runner_io.set_env("MOTHERDUCK_TOKEN", token)
+          PY
+
+      - name: Create E2E database
         env:
           SCENARIO: ${{ matrix.scenario }}
           E2E_RUN_ID: ${{ github.run_id }}
         run: |
           python3 - <<'PY'
-          import os, sys
+          import duckdb, os, sys
           sys.path.insert(0, '.github/scripts')
-          from ci_database import derive_e2e_db_name
+          import ci_database, runner_io
 
           scenario = os.environ['SCENARIO']
-          run_id = os.environ['E2E_RUN_ID']
-          db_name = derive_e2e_db_name(scenario, run_id)
-          print(f"scenario={scenario} db_name={db_name}")
-          # Per-scenario gate-ladder invocation (acquire MOTHERDUCK_TOKEN from Azure KV,
-          # CREATE DATABASE pr_e2e_<...> FROM prd, run gate ladder, DROP DATABASE)
-          # lands with the milestone harness — see VD-2150.
+          run_id   = os.environ['E2E_RUN_ID']
+          db_name  = ci_database.derive_e2e_db_name(scenario, run_id)
+          token    = os.environ['MOTHERDUCK_TOKEN']
+
+          # Wire dbt_motherduck_ci profile to the E2E database.
+          # Profile path: md:pr_{{ env_var('PR_NUMBER') }}_{{ env_var('HEAD_SHA_SHORT') }}?...
+          # Target:       pr_e2e_<scenario_safe>_<run_id_short>
+          scenario_safe = scenario.replace('-', '_')
+          run_id_short  = run_id.lower().replace('-', '')[:8]
+          runner_io.set_env("PR_NUMBER",     f"e2e_{scenario_safe}")
+          runner_io.set_env("HEAD_SHA_SHORT", run_id_short)
+
+          sql = ci_database.create_database_from_prod_sql(db_name)
+          con = duckdb.connect(f"md:?motherduck_token={token}")
+          con.execute(sql)
+          con.close()
+          print(f"Created E2E database: {db_name}")
+          PY
+
+      - name: Run gate ladder (Gates 0–4)
+        id: run-gates
+        run: |
+          # Gate 0: dbt compile — validates bundle scripts, offline profile
+          dbt deps     --profiles-dir .github/profiles --profile dbt_motherduck_compile --target compile --quiet
+          dbt compile  --profiles-dir .github/profiles --profile dbt_motherduck_compile --target compile --quiet
+
+          # Determine model set: select all non-elementary models
+          mkdir -p reports
+          python3 - <<'PY'
+          import json, subprocess, sys
+
+          result = subprocess.run([
+              "dbt", "ls",
+              "--profiles-dir", ".github/profiles",
+              "--profile",      "dbt_motherduck_compile",
+              "--target",       "compile",
+              "--output",       "name",
+              "--exclude",      "package:elementary",
+          ], capture_output=True, text=True)
+          lines = result.stdout.strip().splitlines()
+          names = [
+              l.split(".")[-1] for l in lines
+              if l.strip() and not l.startswith(("Running", "Found", "Update"))
+          ]
+          with open("reports/e2e_model_names.json", "w") as f:
+              json.dump(names, f)
+          print(f"E2E model set ({len(names)} models): {names}")
+          PY
+
+          # Gate 2: dbt run against per-scenario MotherDuck clone
+          python3 - <<'PY'
+          import json, subprocess, sys
+          with open("reports/e2e_model_names.json") as f:
+              names = json.load(f)
+          select_args = [f"+{n}" for n in names] if names else ["state:modified+"]
+          rc = subprocess.run([
+              "dbt", "run", "--select", *select_args,
+              "--profiles-dir", ".github/profiles",
+              "--profile",      "dbt_motherduck_ci",
+              "--target",       "ci",
+          ]).returncode
+          sys.exit(rc)
+          PY
+
+          # Gate 3: dbt unit tests
+          python3 - <<'PY'
+          import json, subprocess, sys
+          with open("reports/e2e_model_names.json") as f:
+              names = json.load(f)
+          if not names:
+              print("Gate 3: no models in scope — skipping unit tests.")
+              sys.exit(0)
+          select_arg = ",".join(names) + ",test_type:unit"
+          sys.exit(subprocess.run([
+              "dbt", "test", "--select", select_arg,
+              "--profiles-dir", ".github/profiles",
+              "--profile",      "dbt_motherduck_ci",
+              "--target",       "ci",
+          ]).returncode)
+          PY
+
+          # Gate 4: dbt data tests
+          python3 - <<'PY'
+          import json, subprocess, sys
+          with open("reports/e2e_model_names.json") as f:
+              names = json.load(f)
+          if not names:
+              print("Gate 4: no models in scope — skipping data tests.")
+              sys.exit(0)
+          sys.exit(subprocess.run([
+              "dbt", "test", "--select", " ".join(names),
+              "--exclude",      "test_type:unit",
+              "--store-failures",
+              "--profiles-dir", ".github/profiles",
+              "--profile",      "dbt_motherduck_ci",
+              "--target",       "ci",
+          ]).returncode)
+          PY
+
+      - name: Drop E2E database
+        if: always()
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          E2E_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import duckdb, os, sys
+          sys.path.insert(0, '.github/scripts')
+          import ci_database
+
+          scenario = os.environ['SCENARIO']
+          run_id   = os.environ['E2E_RUN_ID']
+          db_name  = ci_database.derive_e2e_db_name(scenario, run_id)
+          token    = os.environ.get('MOTHERDUCK_TOKEN', '')
+
+          if not token:
+              print(f"MOTHERDUCK_TOKEN not available; cannot drop {db_name}", flush=True)
+              sys.exit(0)
+
+          sql = ci_database.drop_database_sql(db_name)
+          try:
+              con = duckdb.connect(f"md:?motherduck_token={token}")
+              con.execute(sql)
+              con.close()
+              print(f"Dropped E2E database: {db_name}")
+          except Exception as exc:
+              print(f"Warning: failed to drop {db_name}: {exc}", file=sys.stderr)
           PY
 
   aggregate:

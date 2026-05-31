@@ -14,9 +14,6 @@ dbt_motherduck_compile:
       path: ':memory:'
       database: prd          # matches MotherDuck production database name
       schema: main
-      attach:
-        - path: ':memory:'
-          alias: prd         # dbt-duckdb>=1.9.4 requires database to match an attach alias when path is :memory:
 
 dbt_motherduck_ci:
   target: ci

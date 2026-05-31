@@ -127,13 +127,15 @@ jobs:
               "--profiles-dir", ".github/profiles",
               "--profile",      "dbt_motherduck_compile",
               "--target",       "compile",
-              "--output",       "name",
-              "--exclude",      "package:elementary",
+              "--resource-type", "model",
+              "--output",        "name",
+              "--exclude",       "package:elementary",
+              "--quiet",
           ], capture_output=True, text=True)
           lines = result.stdout.strip().splitlines()
           names = [
               l.split(".")[-1] for l in lines
-              if l.strip() and not l.startswith(("Running", "Found", "Update"))
+              if l.strip() and "." in l and " " not in l.strip()
           ]
           with open("reports/e2e_model_names.json", "w") as f:
               json.dump(names, f)

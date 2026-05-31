@@ -1,0 +1,81 @@
+version: 2
+
+models:
+  - name: fct_pipeline_won_by_rep
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      **Won pipeline fact by sales rep** - aggregates closed-won opportunities by sales rep,
+      fiscal quarter, and fiscal year.
+
+      **Grain:** One row per sales rep per fiscal quarter per fiscal year.
+
+      **Business Purpose:** Enables sales leadership to track quota attainment,
+      rep-level win rates, and revenue contribution per period.
+    columns:
+      - name: owner_id
+        description: Salesforce user ID of the sales rep
+        data_type: string
+        tests:
+          - not_null
+
+      - name: owner_name
+        description: Full name of the sales rep
+        data_type: string
+
+      - name: owner_email
+        description: Email address of the sales rep
+        data_type: string
+
+      - name: owner_is_active
+        description: Whether the sales rep's Salesforce account is currently active
+        data_type: boolean
+
+      - name: fiscal_quarter
+        description: Fiscal quarter of the close date (Q1, Q2, Q3, Q4)
+        data_type: string
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Q1', 'Q2', 'Q3', 'Q4']
+
+      - name: fiscal_year
+        description: Fiscal year (calendar year) of the close date
+        data_type: integer
+        tests:
+          - not_null
+
+      - name: won_opportunities_count
+        description: Number of closed-won opportunities in the period
+        data_type: integer
+        tests:
+          - not_null
+
+      - name: total_won_amount
+        description: Sum of opportunity amounts for won deals in the period
+        data_type: decimal
+
+      - name: total_weighted_amount
+        description: Sum of weighted amounts (amount × probability / 100) for won deals
+        data_type: decimal
+
+      - name: avg_sales_cycle_days
+        description: Average number of days from opportunity creation to close
+        data_type: decimal
+
+      - name: min_sales_cycle_days
+        description: Shortest sales cycle in the period (days)
+        data_type: integer
+
+      - name: max_sales_cycle_days
+        description: Longest sales cycle in the period (days)
+        data_type: integer
+
+      - name: first_close_date
+        description: Earliest close date among won opportunities in the period
+        data_type: date
+
+      - name: last_close_date
+        description: Most recent close date among won opportunities in the period
+        data_type: date

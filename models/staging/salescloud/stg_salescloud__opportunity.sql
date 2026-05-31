@@ -47,7 +47,13 @@ renamed as (
         end as fiscal_quarter,
 
         -- Derived: fiscal year of close date
-        year(closedate) as fiscal_year
+        year(closedate) as fiscal_year,
+
+        -- Derived: fiscal half of close date (H1=Jan-Jun, H2=Jul-Dec)
+        case
+            when month(closedate) in (1, 2, 3, 4, 5, 6) then 'H1'
+            else 'H2'
+        end as fiscal_half
 
     from source
     where isdeleted = false

@@ -106,3 +106,7 @@ models:
       - name: fiscal_year
         description: Derived fiscal year of the close date (calendar year). Null if close_date is null.
         data_type: integer
+
+      - name: fiscal_half
+        description: Derived fiscal half of the close date (H1=Jan-Jun, H2=Jul-Dec). Null if close_date is null.
+        data_type: string

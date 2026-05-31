@@ -56,7 +56,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dbt-duckdb
-        run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb==1.9.3" "duckdb==1.5.2" --quiet
+        run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb==1.9.4" "duckdb==1.5.2" --quiet
 
       - name: Azure login
         uses: azure/login@v2

@@ -13,7 +13,20 @@ models:
 
       **Business Purpose:** Enables sales leadership to track quota attainment,
       rep-level win rates, and revenue contribution per period.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - owner_id
+            - fiscal_year
+            - fiscal_quarter
     columns:
+      - name: rep_period_id
+        description: Surrogate key derived from owner_id + fiscal_year + fiscal_quarter (grain identifier)
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
       - name: owner_id
         description: Salesforce user ID of the sales rep
         data_type: string

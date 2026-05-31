@@ -1,67 +1,66 @@
-# Sales Pipeline CI Testing — Design Contract
+# Sales Pipeline CI Testing — Design
 
-## Intent
+## Context
 
-Add `fiscal_half` derived column to `stg_salescloud__opportunity` and introduce `fct_pipeline_won_by_rep` as a new mart.
+This PR adds `fiscal_half` to `stg_salescloud__opportunity` and introduces `fct_pipeline_won_by_rep` as a new mart aggregating closed-won opportunities by sales rep and period.
 
-## Models in state:modified+
+## Source Mapping
 
----
+| Source Table | Staging Model | Mart Model | Build Status |
+|---|---|---|---|
+| `salescloud.opportunity` | `stg_salescloud__opportunity` | `fct_pipeline`, `fct_pipeline_monthly_product`, `fct_sales_pipeline_by_stage`, `fct_pipeline_won_by_rep` | modified / downstream |
+| `salescloud.opportunitylineitem` | `stg_salescloud__opportunitylineitem` | `fct_pipeline_monthly_product` | existing |
+
+## Model Architecture
+
+```
+Sources (salescloud schema)
+    ↓
+Staging Layer (views)
+    stg_salescloud__opportunity  ← modified (fiscal_half added)
+    stg_salescloud__opportunitylineitem
+    ↓
+Mart Layer (tables)
+    fct_pipeline ← stg_salescloud__opportunity + dim_account + dim_user
+    fct_pipeline_monthly_product ← stg_salescloud__opportunitylineitem + stg_salescloud__opportunity
+    fct_sales_pipeline_by_stage ← stg_salescloud__opportunity
+    fct_pipeline_won_by_rep ← fct_pipeline  (NEW)
+```
+
+## Materialization Strategy
+
+| Model | Materialization | Rationale |
+|---|---|---|
+| `stg_salescloud__opportunity` | `view` | Lightweight rename/cast layer, staging convention |
+| `fct_pipeline` | `table` | Core mart, high-frequency analytics queries |
+| `fct_pipeline_monthly_product` | `table` | Monthly aggregation, moderate size |
+| `fct_sales_pipeline_by_stage` | `table` | Stage-level aggregation for funnel analysis |
+| `fct_pipeline_won_by_rep` | `table` | Rep-level aggregation, new in this PR |
+
+## Changes in This PR
+
+### stg_salescloud__opportunity (modified)
+- Added `fiscal_half` column: `'H1'` for close months Jan–Jun, `'H2'` for Jul–Dec, derived from `closedate` month.
+
+### fct_pipeline_won_by_rep (new)
+- New fact table aggregating closed-won opportunities by sales rep (`owner_id`) per fiscal year and quarter.
+- Surrogate key `rep_period_id` = md5 hash of `(owner_id, fiscal_year, fiscal_quarter)`.
+- Source: filters `fct_pipeline` where `is_won = true`.
+
+## Grain Specification
+
+| Model | Grain | Validation |
+|---|---|---|
+| `stg_salescloud__opportunity` | One row per opportunity (1:1 with source, filtered isdeleted=false) | `unique` + `not_null` test on `opportunity_id` |
+| `fct_pipeline` | One row per opportunity (current state snapshot) | `unique` + `not_null` test on `opportunity_id` |
+| `fct_pipeline_monthly_product` | One row per (close_month, product_id) combination | `unique_combination_of_columns` test on (`close_month`, `product_id`) |
+| `fct_sales_pipeline_by_stage` | One row per (stage_name, fiscal_year, fiscal_quarter) | No single-column unique test; grain enforced by GROUP BY |
+| `fct_pipeline_won_by_rep` | One row per (owner_id, fiscal_year, fiscal_quarter) | `unique` + `not_null` on `rep_period_id`; `unique_combination_of_columns` on (`owner_id`, `fiscal_year`, `fiscal_quarter`) |
+
+## Column Notes
 
 ### stg_salescloud__opportunity
-
-Materialization: `view` | Schema: `stg`
-
-Grain: one row per opportunity (1:1 with source salescloud.opportunity, filtered to isdeleted=false).
-
-Changes: added `fiscal_half` column (H1 for close months Jan–Jun, H2 for Jul–Dec).
-
-Columns: opportunity_id, account_id, owner_id, opportunity_name, stage_name, opportunity_type, lead_source, amount, probability, expected_revenue, created_date, close_date, last_stage_change_date, is_closed, is_won, is_deleted, last_modified_date, system_modified_timestamp, fiscal_quarter, fiscal_year, fiscal_half.
-
----
-
-### fct_pipeline
-
-Materialization: `table` | Schema: `mrt`
-
-Grain: one row per opportunity (current state snapshot).
-
-No logic changes in this PR. Downstream of stg_salescloud__opportunity.
-
-Columns: opportunity_id, account_id, owner_id, opportunity_name, stage_name, opportunity_type, lead_source, amount, probability, expected_revenue, weighted_amount, created_date, close_date, last_stage_change_date, is_closed, is_won, forecast_category, sales_cycle_days, opportunity_age_days, days_in_current_stage, is_orphaned_opportunity, is_zero_value, last_modified_date, system_modified_timestamp, account_name, account_type, industry, billing_city, billing_state, billing_country, owner_name, owner_email, owner_is_active.
-
----
-
-### fct_pipeline_monthly_product
-
-Materialization: `table` | Schema: `mrt`
-
-Grain: one row per (close_month, product_id) — one calendar month and product combination.
-
-No logic changes in this PR. Downstream via stg_salescloud__opportunity.
-
-Columns: close_month, product_id, product_code, product_name, total_revenue, won_revenue, lost_revenue, opportunity_count, won_opportunity_count, lost_opportunity_count, total_quantity, line_item_count, avg_deal_size, avg_unit_price, avg_discount, win_rate_pct, earliest_close_date, latest_close_date.
-
----
-
-### fct_sales_pipeline_by_stage
-
-Materialization: `table` | Schema: `mrt`
-
-Grain: one row per (stage_name, fiscal_year, fiscal_quarter).
-
-No logic changes in this PR. Downstream of stg_salescloud__opportunity.
-
-Columns: stage_name, fiscal_year, fiscal_quarter, opportunity_count, won_count, lost_count, total_amount, weighted_amount, avg_probability.
-
----
+All existing columns preserved. New column `fiscal_half` (string: H1 or H2) added after `fiscal_year`.
 
 ### fct_pipeline_won_by_rep
-
-Materialization: `table` | Schema: `mrt`
-
-Grain: one row per (owner_id, fiscal_year, fiscal_quarter) — won opportunities aggregated by sales rep and period.
-
-New model in this PR. Reads from fct_pipeline filtered to is_won=true.
-
-Columns: rep_period_id, owner_id, owner_name, owner_email, owner_is_active, fiscal_quarter, fiscal_year, won_opportunities_count, total_won_amount, total_weighted_amount, avg_sales_cycle_days, min_sales_cycle_days, max_sales_cycle_days, first_close_date, last_close_date.
+Key columns: `rep_period_id` (surrogate key), `owner_id`, `owner_name`, `owner_email`, `owner_is_active`, `fiscal_quarter`, `fiscal_year`, `won_opportunities_count`, `total_won_amount`, `total_weighted_amount`, `avg_sales_cycle_days`, `min_sales_cycle_days`, `max_sales_cycle_days`, `first_close_date`, `last_close_date`.

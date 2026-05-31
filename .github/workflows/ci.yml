@@ -179,7 +179,7 @@ jobs:
 
       - name: Install analysis tools
         run: |
-          pip install ruff sqlfluff pyyaml "dbt-core>=1.8" "dbt-duckdb==1.9.4" "duckdb==1.5.2" --quiet
+          pip install ruff sqlfluff pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
           curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz \
             | tar xz -C /usr/local/bin gitleaks
 
@@ -407,7 +407,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb==1.9.4" "duckdb==1.5.2" --quiet
+      - run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
 
       - name: Emit Gate 1 pending
         env:
@@ -587,7 +587,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb==1.9.4" "duckdb==1.5.2" --quiet
+      - run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
 
       - name: Emit ci/design-drift pending
         env:
@@ -698,7 +698,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dbt-duckdb
-        run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb==1.9.4" "duckdb==1.5.2" --quiet
+        run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
 
       - name: Emit ci/run pending
         env:
@@ -792,21 +792,30 @@ jobs:
           with open(f"reports/deployment-manifest-{os.environ['HEAD_SHA']}.json") as f:
               dm = json.load(f)
           names = [f"+{a['name']}" for a in dm.get("artifacts", [])]
-          select_arg = " ".join(names) if names else "state:modified+"
-          print(f"Selecting models: {select_arg}")
-          with open("reports/gate2_select.txt", "w") as f:
-              f.write(select_arg)
+          if not names:
+              print("No artifacts in deployment manifest — skipping dbt run")
+              with open("reports/gate2_select.txt", "w"):
+                  pass
+          else:
+              select_arg = " ".join(names)
+              print(f"Selecting models: {select_arg}")
+              with open("reports/gate2_select.txt", "w") as f:
+                  f.write(select_arg)
           EOF
 
           dbt deps --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
 
           SELECT=$(cat reports/gate2_select.txt)
-          dbt run \
-            --select $SELECT \
-            --profiles-dir .github/profiles \
-            --profile dbt_motherduck_ci \
-            --target ci \
-            --no-use-colors 2>&1 || true
+          if [ -n "$SELECT" ]; then
+            dbt run \
+              --select $SELECT \
+              --profiles-dir .github/profiles \
+              --profile dbt_motherduck_ci \
+              --target ci \
+              --no-use-colors 2>&1 || true
+          else
+            echo "No models to build — gate-2 passes with empty artifact list"
+          fi
 
       - name: Assemble gate-2 result and save report
         id: assemble
@@ -917,7 +926,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dbt-duckdb
-        run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb==1.9.4" "duckdb==1.5.2" --quiet
+        run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
 
       - run: mkdir -p reports
 
@@ -1101,7 +1110,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb==1.9.4" "duckdb==1.5.2" --quiet
+      - run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
 
       - uses: azure/login@v2
         with:

@@ -7,17 +7,20 @@ with won_opportunities as (
 
 rep_summary as (
     select
-        -- Surrogate key (grain: owner_id + fiscal_year + fiscal_quarter)
-        {{ dbt_utils.generate_surrogate_key(['owner_id', 'fiscal_year', 'fiscal_quarter']) }}
-            as rep_period_id,
-
-        -- Grain: one row per sales rep per fiscal year and quarter
+        -- Grain dimensions
         owner_id,
         owner_name,
         owner_email,
         owner_is_active,
         fiscal_quarter,
         fiscal_year,
+
+        -- Surrogate key: md5 hash of owner_id + fiscal_year + fiscal_quarter
+        md5(
+            coalesce(cast(owner_id as varchar), '')
+            || '|' || coalesce(cast(fiscal_year as varchar), '')
+            || '|' || coalesce(cast(fiscal_quarter as varchar), '')
+        ) as rep_period_id,
 
         -- Counts
         count(opportunity_id) as won_opportunities_count,

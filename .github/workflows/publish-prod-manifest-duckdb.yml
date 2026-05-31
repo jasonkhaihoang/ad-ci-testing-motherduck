@@ -20,7 +20,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dbt-duckdb
-        run: pip install "dbt-duckdb==1.9.4" "duckdb==1.5.2" --quiet
+        run: pip install "dbt-duckdb" "duckdb==1.5.2" --quiet
 
       - name: Parse dbt project
         run: |

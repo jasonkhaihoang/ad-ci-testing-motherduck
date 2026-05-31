@@ -130,12 +130,13 @@ jobs:
               "--resource-type", "model",
               "--output",        "name",
               "--exclude",       "package:elementary",
-              "--quiet",
           ], capture_output=True, text=True)
+          import re
           lines = result.stdout.strip().splitlines()
+          # dbt ls --output name emits "project.model_name" lines; filter out ANSI/status lines
           names = [
               l.split(".")[-1] for l in lines
-              if l.strip() and "." in l and " " not in l.strip()
+              if re.match(r'^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$', l.strip())
           ]
           with open("reports/e2e_model_names.json", "w") as f:
               json.dump(names, f)

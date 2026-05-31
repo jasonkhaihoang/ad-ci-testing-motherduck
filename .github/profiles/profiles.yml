@@ -12,11 +12,14 @@ dbt_motherduck_compile:
     compile:
       type: duckdb
       path: ':memory:'
-      database: prd          # matches MotherDuck production database name
-      schema: main
+      # dbt-duckdb>=1.9.4 requires an explicit attach clause to resolve a named
+      # database (database: prd) against an in-memory path. Without it, dbt
+      # errors with "Credentials invalid". See VD-2279.
       attach:
         - path: ':memory:'
-          alias: prd         # dbt-duckdb>=1.9.4 requires database to match an attach alias when path is :memory:
+          alias: prd
+      database: prd          # matches MotherDuck production database name
+      schema: main
 
 dbt_motherduck_ci:
   target: ci

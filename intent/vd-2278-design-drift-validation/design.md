@@ -1,5 +1,11 @@
 # Design — VD-2278 design-drift validation
 
+## stg_salescloud__opportunity
+- grain: one row per opportunity (opportunity_id)
+- materialization: view
+- unique_key: opportunityid
+- columns: opportunity_id, account_id, owner_id, opportunity_name, stage_name, opportunity_type, lead_source, amount, probability, expected_revenue, created_date, close_date, last_stage_change_date, is_closed, is_won, is_deleted, last_modified_date, system_modified_timestamp, fiscal_quarter, fiscal_year
+
 ## fct_pipeline
 - grain: one row per opportunity (opportunity_id)
 - materialization: table

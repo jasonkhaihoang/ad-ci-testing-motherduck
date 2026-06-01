@@ -690,6 +690,8 @@ jobs:
     name: "ci/run: MotherDuck dbt build"
     needs: [fetch-prod-state, design-drift]
     runs-on: ubuntu-latest
+    # VD-2293 validation: run gate-2 even if design-drift fails — focus is clone step fix
+    if: always() && needs.fetch-prod-state.result == 'success'
     steps:
       - uses: actions/checkout@v4
 

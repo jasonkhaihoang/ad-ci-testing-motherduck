@@ -1,0 +1,73 @@
+# Seeds raw fixture CSVs into the MotherDuck `prd` database and runs a full dbt build,
+# leaving prd/main fully populated for E2E clone tests (VD-2292).
+# Requires: MOTHERDUCK_TOKEN (fetched from Azure KV via UAMI OIDC).
+# Trigger: manual workflow_dispatch only — this is a one-time / on-demand operation.
+name: Seed prd (MotherDuck fixture init)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # Azure OIDC login for Key Vault secret fetch (MOTHERDUCK_TOKEN)
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  seed-prd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dbt-duckdb
+        run: pip install "dbt-duckdb" --quiet
+
+      - name: Azure login (KV UAMI — OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_KV_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch MOTHERDUCK_TOKEN from Azure KV
+        env:
+          AZURE_KEYVAULT_URL: ${{ vars.AZURE_KEYVAULT_URL }}
+          MOTHERDUCK_TOKEN_KV_NAME: ${{ vars.MOTHERDUCK_TOKEN_KV_NAME }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import kv_utils, runner_io
+          token_kv_name = os.environ.get("MOTHERDUCK_TOKEN_KV_NAME") or "motherduck-ci-token"
+          token = kv_utils.get_secret(token_kv_name)
+          runner_io.mask(token)
+          runner_io.set_env("MOTHERDUCK_TOKEN", token)
+          EOF
+
+      - name: Install dbt packages
+        run: dbt deps --quiet
+
+      - name: Seed raw fixture data into prd
+        env:
+          MOTHERDUCK_TOKEN: ${{ env.MOTHERDUCK_TOKEN }}
+        run: |
+          dbt seed \
+            --profiles-dir .github/profiles \
+            --profile dbt_motherduck_prd \
+            --target prd \
+            --full-refresh
+
+      - name: Run full dbt build into prd
+        env:
+          MOTHERDUCK_TOKEN: ${{ env.MOTHERDUCK_TOKEN }}
+        run: |
+          dbt run \
+            --profiles-dir .github/profiles \
+            --profile dbt_motherduck_prd \
+            --target prd \
+            --full-refresh

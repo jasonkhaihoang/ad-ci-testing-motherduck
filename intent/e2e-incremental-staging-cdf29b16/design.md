@@ -1,15 +1,16 @@
-# Design: E2E incremental-staging VD-2282
+# E2E Incremental-Staging Test (VD-2282)
 
-## Source Mapping
-| Source Table | Staging Model | Status |
-|---|---|---|
-| `salescloud.opportunity` | `stg_salescloud__opportunity` | **Modified** |
+## Changes
 
-## Model Architecture
-Modification to existing staging model for E2E incremental-staging test.
+One change in this PR:
 
-## Build Sequence
-1. Run `stg_salescloud__opportunity` (staging, modified)
+1. `stg_salescloud__opportunity`: existing view. Comment-only test marker prepended (no structural changes).
+   Grain, materialization, schema, and columns are unchanged from the baseline.
 
-## Grain
-- `stg_salescloud__opportunity`: one row per opportunity
+## Models
+
+### stg_salescloud__opportunity
+
+Materialization: view  
+Change: comment-only test marker prepended (E2E CI validation). No structural changes.  
+Columns: unchanged — see existing schema.yml.

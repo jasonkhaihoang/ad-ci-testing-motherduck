@@ -71,3 +71,16 @@ jobs:
             --profile dbt_motherduck_prd \
             --target prd \
             --full-refresh
+
+      - name: Set prd snapshot retention to 0 (free-plan compatibility)
+        env:
+          MOTHERDUCK_TOKEN: ${{ env.MOTHERDUCK_TOKEN }}
+        run: |
+          python3 - <<'EOF'
+          import duckdb, os
+          token = os.environ["MOTHERDUCK_TOKEN"]
+          con = duckdb.connect(f"md:prd?motherduck_token={token}")
+          con.execute("ALTER DATABASE prd SET SNAPSHOT_RETENTION_DAYS = 0")
+          con.close()
+          print("prd: SNAPSHOT_RETENTION_DAYS set to 0")
+          EOF

@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - run: pip install duckdb --quiet
+      - run: pip install "duckdb==1.5.2" --quiet
 
       - name: Azure login (KV UAMI — OIDC)
         uses: azure/login@v2

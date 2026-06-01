@@ -771,7 +771,6 @@ jobs:
           import duckdb
           con = duckdb.connect(f"md:?motherduck_token={token}")
           con.execute(sql)
-          con.execute(ci_database.alter_database_snapshot_retention_sql(db_name))
           con.close()
 
           runner_io.set_output("db_name", db_name)
@@ -913,7 +912,7 @@ jobs:
     name: "ci/unit-tests: dbt unit tests (MotherDuck)"
     needs: [gate-2-run]
     runs-on: ubuntu-latest
-    if: false  # VD-2293 validation: skip gate-3 to save runner time
+    if: always() && needs.gate-2-run.result == 'success'
 
     concurrency:
       group: ci-gate3-pr-${{ github.event.pull_request.number }}
@@ -1102,7 +1101,6 @@ jobs:
     name: "ci/data-tests: dbt test --store-failures"
     needs: [gate-2-run]
     runs-on: ubuntu-latest
-    if: false  # VD-2293 validation: skip gate-4 to save runner time
     permissions:
       contents: read
       id-token: write

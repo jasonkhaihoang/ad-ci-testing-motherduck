@@ -38,7 +38,7 @@ CONTEXT = "ci/design-drift"
 CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 CLAUDE_MODEL = "claude-sonnet-4-6"
 CLAUDE_API_VERSION = "2023-06-01"
-MAX_OUTPUT_TOKENS = 2048
+MAX_OUTPUT_TOKENS = 4096
 
 _DRIFT_TOOL = {
     "name": "report_design_drift",

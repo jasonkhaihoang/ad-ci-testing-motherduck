@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: dim_closed_won_opportunity
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      Dimension table of closed-won opportunities. Contains one row per won
+      opportunity, derived from stg_salescloud__opportunity.
+    columns:
+      - name: opportunity_id
+        description: Unique identifier for the opportunity
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: account_id
+        description: Foreign key to the associated account
+        data_type: string
+        tests:
+          - not_null
+
+      - name: owner_id
+        description: Foreign key to the opportunity owner
+        data_type: string
+
+      - name: opportunity_name
+        description: Name of the opportunity
+        data_type: string
+
+      - name: stage_name
+        description: Final stage name (Closed Won)
+        data_type: string
+
+      - name: opportunity_type
+        description: Type of opportunity
+        data_type: string
+
+      - name: lead_source
+        description: Lead source
+        data_type: string
+
+      - name: amount
+        description: Total deal value
+        data_type: decimal
+
+      - name: close_date
+        description: Date the opportunity was closed
+        data_type: date
+
+      - name: fiscal_quarter
+        description: Fiscal quarter of close date
+        data_type: string
+
+      - name: fiscal_year
+        description: Fiscal year of close date
+        data_type: integer
+
+      - name: created_date
+        description: Timestamp when created in Salesforce
+        data_type: timestamp
+
+      - name: last_modified_date
+        description: Timestamp of last modification
+        data_type: timestamp

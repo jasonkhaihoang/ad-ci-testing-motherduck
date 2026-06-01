@@ -19,6 +19,16 @@ def create_database_from_prod_sql(name: str, prod_db_name: str = "prd") -> str:
     return f"CREATE DATABASE {name} FROM {prod_db_name};"
 
 
+def alter_database_snapshot_retention_sql(name: str) -> str:
+    """Render ALTER DATABASE <name> SET SNAPSHOT_RETENTION_DAYS = 0.
+
+    Always called immediately after CREATE DATABASE … FROM prd so free-plan
+    MotherDuck accounts (which only permit 0-day retention) don't reject the
+    clone. Setting 0 is a no-op on paid plans.
+    """
+    return f"ALTER DATABASE {name} SET SNAPSHOT_RETENTION_DAYS = 0;"
+
+
 def drop_database_sql(name: str) -> str:
     """Render DROP DATABASE <name>."""
     return f"DROP DATABASE {name};"

@@ -125,7 +125,10 @@ def _post_pr_comment(pr_number: str, result: dict | None, modified_names: list[s
     if not repo:
         return
     body = notify_render.render_design_drift_comment(result, modified_names)
-    pr_comment.upsert(notify_render.DESIGN_DRIFT_MARKER, body, pr_number, repo)
+    try:
+        pr_comment.upsert(notify_render.DESIGN_DRIFT_MARKER, body, pr_number, repo)
+    except Exception as e:
+        print(f"Failed to post PR comment: {e}", flush=True)
 
 
 def _summary(result: dict) -> str:

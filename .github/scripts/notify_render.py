@@ -252,8 +252,8 @@ def render_gate_3(summary: dict) -> tuple[bool, str]:
     if overall == "skipped":
         return (
             True,
-            f"## Unit Tests (ci/unit-tests) ⏭️\n\n"
-            f"No unit tests found for the modified model closure — gate skipped.\n",
+            "## Unit Tests (ci/unit-tests) ⏭️\n\n"
+            "No unit tests found for the modified model closure — gate skipped.\n",
         )
 
     passed = overall == "pass"

@@ -49,6 +49,20 @@ jobs:
           runner_io.set_env("MOTHERDUCK_TOKEN", token)
           EOF
 
+      - name: Recreate prd with 0-day snapshot retention (free-plan compatibility)
+        env:
+          MOTHERDUCK_TOKEN: ${{ env.MOTHERDUCK_TOKEN }}
+        run: |
+          python3 - <<'EOF'
+          import duckdb, os
+          token = os.environ["MOTHERDUCK_TOKEN"]
+          con = duckdb.connect(f"md:?motherduck_token={token}")
+          con.execute("DROP DATABASE IF EXISTS prd")
+          con.execute("CREATE DATABASE prd (SNAPSHOT_RETENTION_DAYS 0)")
+          con.close()
+          print("prd (re)created with SNAPSHOT_RETENTION_DAYS = 0")
+          EOF
+
       - name: Install dbt packages
         run: dbt deps --quiet
 
@@ -72,15 +86,3 @@ jobs:
             --target prd \
             --full-refresh
 
-      - name: Set prd snapshot retention to 0 (free-plan compatibility)
-        env:
-          MOTHERDUCK_TOKEN: ${{ env.MOTHERDUCK_TOKEN }}
-        run: |
-          python3 - <<'EOF'
-          import duckdb, os
-          token = os.environ["MOTHERDUCK_TOKEN"]
-          con = duckdb.connect(f"md:prd?motherduck_token={token}")
-          con.execute("ALTER DATABASE prd SET SNAPSHOT_RETENTION_DAYS = 0")
-          con.close()
-          print("prd: SNAPSHOT_RETENTION_DAYS set to 0")
-          EOF

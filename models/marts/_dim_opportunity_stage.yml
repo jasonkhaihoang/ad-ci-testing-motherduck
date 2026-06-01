@@ -1,0 +1,29 @@
+version: 2
+
+models:
+  - name: dim_opportunity_stage
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      Dimension table aggregating opportunity metrics by pipeline stage.
+      Provides per-stage counts, total amounts, and average probability.
+    columns:
+      - name: stage_name
+        description: Salesforce opportunity stage name
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: opportunity_count
+        description: Number of opportunities in this stage
+        data_type: integer
+
+      - name: total_amount
+        description: Sum of opportunity amounts in this stage
+        data_type: float
+
+      - name: avg_probability
+        description: Average close probability for opportunities in this stage
+        data_type: float

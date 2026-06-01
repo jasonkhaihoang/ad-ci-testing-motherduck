@@ -55,4 +55,4 @@ renamed as (
 
 select * from renamed
 
--- VD-2229 validation bump
+-- VD-2284/2285/2286/2287/2288 validation bump

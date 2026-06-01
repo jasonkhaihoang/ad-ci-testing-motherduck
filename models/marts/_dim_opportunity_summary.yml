@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: dim_opportunity_summary
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      Summary dimension aggregating opportunity counts and amounts by sales stage.
+      Grain: one row per unique stage_name.
+    columns:
+      - name: stage_name
+        description: Sales stage name (e.g. Prospecting, Closed Won)
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: opportunity_count
+        description: Total number of opportunities in this stage
+        data_type: integer
+
+      - name: total_amount
+        description: Sum of opportunity amounts in this stage
+        data_type: decimal
+
+      - name: avg_amount
+        description: Average opportunity amount in this stage
+        data_type: decimal
+
+      - name: won_count
+        description: Number of won opportunities in this stage
+        data_type: integer
+
+      - name: lost_count
+        description: Number of closed-lost opportunities in this stage
+        data_type: integer

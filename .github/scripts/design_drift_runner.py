@@ -31,6 +31,8 @@ import urllib.request
 
 import emit_status
 import kv_utils
+import notify_render
+import pr_comment
 
 from design_drift import build_llm_prompt, run_design_drift
 
@@ -38,7 +40,7 @@ CONTEXT = "ci/design-drift"
 CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 CLAUDE_MODEL = "claude-sonnet-4-6"
 CLAUDE_API_VERSION = "2023-06-01"
-MAX_OUTPUT_TOKENS = 2048
+MAX_OUTPUT_TOKENS = 4096
 
 _DRIFT_TOOL = {
     "name": "report_design_drift",
@@ -118,6 +120,14 @@ def _post(head_sha: str, state: str, description: str) -> None:
     emit_status.emit_status(repo, head_sha, CONTEXT, state, description, _run_url())
 
 
+def _post_pr_comment(pr_number: str, result: dict | None, modified_names: list[str] | None = None) -> None:
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if not repo:
+        return
+    body = notify_render.render_design_drift_comment(result, modified_names)
+    pr_comment.upsert(notify_render.DESIGN_DRIFT_MARKER, body, pr_number, repo)
+
+
 def _summary(result: dict) -> str:
     if not result["has_drift"]:
         return "design.md matches state:modified — no drift"
@@ -144,10 +154,12 @@ def main(argv: list[str]) -> int:
         llm_response = call_claude(api_key, prompt)
     except Exception as e:  # gather/call failure → emit failure status, exit 1
         _post(args.head_sha, "failure", f"design-drift error: {type(e).__name__}: {e}")
+        _post_pr_comment(args.pr_number, result=None)
         return 1
 
     result = run_design_drift(design_text, manifest, modified_names, llm_response)
     _post(args.head_sha, "failure" if result["has_drift"] else "success", _summary(result))
+    _post_pr_comment(args.pr_number, result=result, modified_names=modified_names)
     return 1 if result["has_drift"] else 0
 
 

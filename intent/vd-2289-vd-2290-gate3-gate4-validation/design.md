@@ -2,13 +2,17 @@
 
 ## Changes
 
-Two changes in this PR:
+Three changes in this PR (relative to prod state):
 
 1. `stg_salescloud__account`: existing view. Comment bump for CI validation.
    No grain, materialization, schema, or column changes — validation marker only.
 
 2. `dim_opportunity_stage`: new table. Aggregates opportunity pipeline volume
    by sales stage. Grain: one row per stage_name.
+
+3. `dim_opportunity_summary`: existing table (pre-existing in branch).
+   Aggregates opportunity counts and amounts by sales stage.
+   Grain: one row per stage_name. No structural changes in this PR.
 
 ## Models
 
@@ -23,6 +27,13 @@ Change: comment-only validation marker added. No structural changes.
 Materialization: table
 Grain: one row per stage_name
 Change: new model. Columns: stage_name, opportunity_count, total_amount, avg_probability, won_count, lost_count, open_count.
+
+### dim_opportunity_summary
+
+Materialization: table
+Grain: one row per stage_name
+Change: pre-existing in branch, no structural changes in this PR.
+Columns: stage_name, opportunity_count, total_amount, avg_amount, won_count, lost_count.
 
 ### dim_account
 

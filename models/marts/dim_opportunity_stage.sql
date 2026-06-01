@@ -9,12 +9,14 @@ with opportunities as (
 stage_summary as (
     select
         stage_name,
-        count(*)                                             as opportunity_count,
-        sum(amount)                                          as total_amount,
-        avg(probability)                                     as avg_probability,
-        sum(case when is_won then 1 else 0 end)              as won_count,
-        sum(case when is_closed and not is_won then 1 else 0 end) as lost_count,
-        sum(case when not is_closed then 1 else 0 end)       as open_count
+        count(*) as opportunity_count,
+        sum(amount) as total_amount,
+        avg(probability) as avg_probability,
+        sum(case when is_won then 1 else 0 end) as won_count,
+        sum(
+            case when is_closed and not is_won then 1 else 0 end
+        ) as lost_count,
+        sum(case when not is_closed then 1 else 0 end) as open_count
     from opportunities
     group by stage_name
 )

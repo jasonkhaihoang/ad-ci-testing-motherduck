@@ -15,12 +15,8 @@ def derive_ci_database_name(pr_number: int, head_sha_short: str) -> str:
 
 
 def create_database_from_prod_sql(name: str, prod_db_name: str = "prd") -> str:
-    """Render CREATE DATABASE <name> FROM <prod_db_name> with zero snapshot retention.
-
-    SNAPSHOT_RETENTION_DAYS 0 is required for MotherDuck free-plan accounts —
-    the default (7 days) is only valid on paid plans.
-    """
-    return f"CREATE DATABASE {name} FROM {prod_db_name} (SNAPSHOT_RETENTION_DAYS 0);"
+    """Render CREATE DATABASE <name> FROM <prod_db_name>."""
+    return f"CREATE DATABASE {name} FROM {prod_db_name};"
 
 
 def drop_database_sql(name: str) -> str:

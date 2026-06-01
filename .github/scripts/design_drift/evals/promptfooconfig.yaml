@@ -1,0 +1,122 @@
+# ci/design-drift LLM prompt contract eval suite.
+# Uses a Python file:// provider that calls the production build_llm_prompt + call_claude.
+# Run: npx promptfoo@latest eval
+# See: docs/design/DuckDB/duckdb-motherduck-ci-workflow-design.md
+
+description: "ci/design-drift prompt contract — 9 drift-class cases"
+
+providers:
+  - id: "file://provider.py"
+    label: "claude-design-drift-direct"
+
+prompts:
+  - "{{design_text}}"
+
+tests:
+  # ── Case 1: No-drift baseline ──────────────────────────────────────────────
+  - description: "no-drift baseline — design.md aligned with manifest"
+    vars:
+      design_text: "file://fixtures/no_drift/design.md"
+      manifest_json: "file://fixtures/no_drift/manifest.json"
+      modified_names_json: "file://fixtures/no_drift/modified.json"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).has_drift === false"
+      - type: javascript
+        value: "JSON.parse(output).findings.length === 0"
+
+  # ── Case 2: Missing model ─────────────────────────────────────────────────
+  - description: "missing-model drift — fct_orders in design.md but absent from manifest"
+    vars:
+      design_text: "file://fixtures/missing_model/design.md"
+      manifest_json: "file://fixtures/missing_model/manifest.json"
+      modified_names_json: "file://fixtures/missing_model/modified.json"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).has_drift === true"
+      - type: javascript
+        value: "JSON.parse(output).findings.some(f => f.kind === 'missing_model')"
+
+  # ── Case 3: Extra model ────────────────────────────────────────────────────
+  - description: "extra-model drift — dim_customers in manifest but not documented in design.md"
+    vars:
+      design_text: "file://fixtures/extra_model/design.md"
+      manifest_json: "file://fixtures/extra_model/manifest.json"
+      modified_names_json: "file://fixtures/extra_model/modified.json"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).has_drift === true"
+      - type: javascript
+        value: "JSON.parse(output).findings.some(f => f.kind === 'extra_model')"
+
+  # ── Case 4: Grain mismatch ─────────────────────────────────────────────────
+  - description: "grain mismatch — design.md says order_id grain; manifest has composite [order_id, line_id]"
+    vars:
+      design_text: "file://fixtures/grain_mismatch/design.md"
+      manifest_json: "file://fixtures/grain_mismatch/manifest.json"
+      modified_names_json: "file://fixtures/grain_mismatch/modified.json"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).has_drift === true"
+      - type: javascript
+        value: "JSON.parse(output).findings.some(f => f.kind === 'grain_mismatch' || f.kind === 'unique_key_mismatch')"
+
+  # ── Case 5: Materialization mismatch ─────────────────────────────────────
+  - description: "materialization mismatch — design.md says table; manifest says view for fct_orders"
+    vars:
+      design_text: "file://fixtures/materialization_mismatch/design.md"
+      manifest_json: "file://fixtures/materialization_mismatch/manifest.json"
+      modified_names_json: "file://fixtures/materialization_mismatch/modified.json"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).has_drift === true"
+      - type: javascript
+        value: "JSON.parse(output).findings.some(f => f.kind === 'materialization_mismatch')"
+
+  # ── Case 6: unique_key mismatch ────────────────────────────────────────────
+  - description: "unique_key mismatch — design.md says order_id; manifest says id"
+    vars:
+      design_text: "file://fixtures/unique_key_mismatch/design.md"
+      manifest_json: "file://fixtures/unique_key_mismatch/manifest.json"
+      modified_names_json: "file://fixtures/unique_key_mismatch/modified.json"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).has_drift === true"
+      - type: javascript
+        value: "JSON.parse(output).findings.some(f => f.kind === 'unique_key_mismatch')"
+
+  # ── Case 7: Unexpected column ──────────────────────────────────────────────
+  - description: "unexpected column — manifest has region column not documented in design.md"
+    vars:
+      design_text: "file://fixtures/unexpected_column/design.md"
+      manifest_json: "file://fixtures/unexpected_column/manifest.json"
+      modified_names_json: "file://fixtures/unexpected_column/modified.json"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).has_drift === true"
+      - type: javascript
+        value: "JSON.parse(output).findings.some(f => f.kind === 'unexpected_column')"
+
+  # ── Case 8: Missing column ─────────────────────────────────────────────────
+  - description: "missing column — design.md documents status column; manifest omits it"
+    vars:
+      design_text: "file://fixtures/missing_column/design.md"
+      manifest_json: "file://fixtures/missing_column/manifest.json"
+      modified_names_json: "file://fixtures/missing_column/modified.json"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).has_drift === true"
+      - type: javascript
+        value: "JSON.parse(output).findings.some(f => f.kind === 'missing_column')"
+
+  # ── Case 9: Malformed input ────────────────────────────────────────────────
+  - description: "malformed input — degenerate empty design.md with a modified model in manifest"
+    vars:
+      design_text: "file://fixtures/malformed_input/design.md"
+      manifest_json: "file://fixtures/malformed_input/manifest.json"
+      modified_names_json: "file://fixtures/malformed_input/modified.json"
+    assert:
+      - type: javascript
+        value: "JSON.parse(output).has_drift === true"
+      - type: javascript
+        value: "Array.isArray(JSON.parse(output).findings)"

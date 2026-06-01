@@ -1,0 +1,20 @@
+version: 2
+
+models:
+  - name: fct_won_opportunities
+    config:
+      materialized: table
+      unique_key: opportunity_id
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: "Closed-won opportunities with revenue and rep attribution."
+    columns:
+      - name: opportunity_id
+        data_tests: [unique, not_null]
+      - name: account_id
+      - name: owner_id
+      - name: close_date
+      - name: fiscal_quarter
+      - name: fiscal_year
+      - name: arr
+      - name: stage_name

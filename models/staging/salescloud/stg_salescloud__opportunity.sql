@@ -56,3 +56,5 @@ renamed as (
 select * from renamed
 
 -- VD-2229 validation bump
+
+-- VD-2278 design-drift validation bump

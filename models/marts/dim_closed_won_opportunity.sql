@@ -20,8 +20,9 @@ final as (
         created_date,
         last_modified_date
     from opportunities
-    where is_won = true
-      and is_closed = true
+    where
+        is_won = true
+        and is_closed = true
 )
 
 select * from final

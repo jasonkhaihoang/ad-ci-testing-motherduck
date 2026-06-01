@@ -776,9 +776,12 @@ jobs:
           except Exception as e:
               if "retention" in str(e).lower():
                   # Free-plan: prd has >0 snapshot retention which the plan can't inherit.
-                  # Reset prd to 0-day retention and retry. No-op on paid plans (CREATE
-                  # succeeds on the first try and this block is never reached).
-                  con.execute(ci_database.clear_db_retention_sql(prod_db_name))
+                  # Reset prd to 0-day retention via a direct connection to prd, then retry.
+                  # No-op on paid plans (CREATE succeeds on the first try and this block
+                  # is never reached).
+                  con_prd = duckdb.connect(f"md:{prod_db_name}?motherduck_token={token}")
+                  con_prd.execute(ci_database.clear_db_retention_sql(prod_db_name))
+                  con_prd.close()
                   con.execute(sql)
               else:
                   raise

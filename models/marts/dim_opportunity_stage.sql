@@ -1,5 +1,5 @@
 {{ config(materialized='table') }}
--- Dimension table for opportunity stages, summarising pipeline volume per stage.
+-- Dimension table for opportunity stages: pipeline volume per stage.
 -- Added for VD-2289/VD-2290 gate-3/gate-4 validation.
 
 with opportunities as (

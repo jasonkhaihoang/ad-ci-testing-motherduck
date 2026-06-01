@@ -766,11 +766,22 @@ jobs:
           token = os.environ["MOTHERDUCK_TOKEN"]
 
           db_name = ci_database.derive_ci_database_name(pr_number, head_sha_short)
-          sql = ci_database.create_database_from_prod_sql(db_name)
+          prod_db_name = "prd"
+          sql = ci_database.create_database_from_prod_sql(db_name, prod_db_name)
 
           import duckdb
           con = duckdb.connect(f"md:?motherduck_token={token}")
-          con.execute(sql)
+          try:
+              con.execute(sql)
+          except Exception as e:
+              if "retention" in str(e).lower():
+                  # Free-plan: prd has >0 snapshot retention which the plan can't inherit.
+                  # Reset prd to 0-day retention and retry. No-op on paid plans (CREATE
+                  # succeeds on the first try and this block is never reached).
+                  con.execute(ci_database.clear_db_retention_sql(prod_db_name))
+                  con.execute(sql)
+              else:
+                  raise
           con.close()
 
           runner_io.set_output("db_name", db_name)

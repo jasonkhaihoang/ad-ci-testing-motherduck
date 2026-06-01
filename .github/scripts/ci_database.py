@@ -15,13 +15,19 @@ def derive_ci_database_name(pr_number: int, head_sha_short: str) -> str:
 
 
 def create_database_from_prod_sql(name: str, prod_db_name: str = "prd") -> str:
-    """Render CREATE DATABASE <name> FROM <prod_db_name> (SNAPSHOT_RETENTION_DAYS 0).
+    """Render CREATE DATABASE <name> FROM <prod_db_name>."""
+    return f"CREATE DATABASE {name} FROM {prod_db_name};"
 
-    SNAPSHOT_RETENTION_DAYS 0 is set inline so free-plan MotherDuck accounts
-    don't reject the clone (prd uses 7-day retention which free plan disallows).
-    Setting 0 is a no-op on paid plans.
+
+def clear_db_retention_sql(db_name: str) -> str:
+    """Render ALTER DATABASE <db_name> SET SNAPSHOT_RETENTION_DAYS = 0.
+
+    Called as a fallback when CREATE DATABASE … FROM <db_name> fails because
+    <db_name> has >0 snapshot retention incompatible with a free-plan account.
+    After this call the clone can be retried. No-op on databases that already
+    have 0-day retention.
     """
-    return f"CREATE DATABASE {name} FROM {prod_db_name} (SNAPSHOT_RETENTION_DAYS 0);"
+    return f"ALTER DATABASE {db_name} SET SNAPSHOT_RETENTION_DAYS = 0;"
 
 
 def drop_database_sql(name: str) -> str:

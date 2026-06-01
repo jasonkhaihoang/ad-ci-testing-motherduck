@@ -6,17 +6,18 @@ with opportunities as (
 
 won as (
     select
-        opportunityid  as opportunity_id,
-        accountid      as account_id,
-        ownerid        as owner_id,
-        closedate      as close_date,
+        opportunityid as opportunity_id,
+        accountid as account_id,
+        ownerid as owner_id,
+        closedate as close_date,
         fiscal_quarter,
         fiscal_year,
-        amount         as arr,
-        stagename      as stage_name
+        amount as arr,
+        stagename as stage_name
     from opportunities
-    where stagename = 'Closed Won'
-      and iswon = true
+    where
+        stagename = 'Closed Won'
+        and iswon = true
 )
 
 select * from won

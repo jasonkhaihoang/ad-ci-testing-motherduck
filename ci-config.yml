@@ -1,18 +1,21 @@
 # Domain CI Configuration — MotherDuck platform
 #
-# Migrated from Fabric CI bundle to DuckDB/MotherDuck CI bundle (VD-2264).
+# Copy this file to the root of your domain repo as `ci-config.yml`
+# and fill in the values. Non-sensitive — do not store as secrets.
+# VD Studio populates this file automatically at domain setup time.
+
+# Platform discriminator. Must be exactly "motherduck" for this bundle.
 platform: motherduck
 
-# Short slug identifying this domain's intent context.
-intent_slug: dev-sales-pipeline
+# Short slug identifying this domain's intent context. Matches the intent_slug
+# registered in VD Studio for this domain.
+intent_slug: <domain-name>         # e.g. dev-sales-pipeline
 
-# Human-readable domain name used in status labels and comments.
-domain: sales-pipeline
+# MotherDuck service token: set MOTHERDUCK_TOKEN_KV_NAME as a GitHub Actions Variable
+# (Settings → Secrets and variables → Actions → Variables) — not in this file.
 
-# KV secret name for the Anthropic Claude API key (used by design-drift gate).
-claude_api_key_kv_name: claude-api-key
-
-# Production MotherDuck database name.
+# Production MotherDuck database name. Gates 0–1 render this into the manifest
+# via dbt_motherduck_compile (database: prd), so it must match the live prod database.
 prod_db_name: prd
 
 # Prod-state manifest artifact — published by publish-prod-manifest-duckdb.yml on push to main.

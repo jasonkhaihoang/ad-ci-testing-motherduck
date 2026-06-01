@@ -25,7 +25,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dbt-duckdb
-        run: pip install "dbt-duckdb" --quiet
+        run: pip install "dbt-duckdb" "duckdb==1.5.2" --quiet
 
       - name: Azure login (KV UAMI — OIDC)
         uses: azure/login@v2

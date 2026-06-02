@@ -1,0 +1,103 @@
+version: 2
+
+models:
+  - name: fct_opportunity_closed_won
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      Closed-won opportunities fact table. Grain: one row per won opportunity.
+      Used for revenue reporting, quota attainment, and win-rate analysis.
+    columns:
+      - name: opportunity_id
+        description: Primary key — unique identifier for the won opportunity
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: account_id
+        description: Foreign key to dim_account
+        data_type: string
+
+      - name: owner_id
+        description: Foreign key to dim_user (sales rep)
+        data_type: string
+
+      - name: opportunity_name
+        description: Name of the won opportunity
+        data_type: string
+
+      - name: stage_name
+        description: Final stage name (always Closed Won)
+        data_type: string
+
+      - name: opportunity_type
+        description: Type of opportunity (New Business, Upsell, Renewal, etc.)
+        data_type: string
+
+      - name: lead_source
+        description: Original lead source
+        data_type: string
+
+      - name: amount
+        description: Total deal value
+        data_type: decimal
+
+      - name: probability
+        description: Probability at close (typically 100 for won)
+        data_type: integer
+
+      - name: expected_revenue
+        description: Salesforce expected revenue at close
+        data_type: decimal
+
+      - name: weighted_amount
+        description: amount × (probability / 100)
+        data_type: decimal
+
+      - name: created_date
+        description: When the opportunity was created
+        data_type: timestamp
+
+      - name: close_date
+        description: Date the opportunity was won
+        data_type: date
+        tests:
+          - not_null
+
+      - name: fiscal_quarter
+        description: Fiscal quarter of close date (Q1–Q4)
+        data_type: string
+
+      - name: fiscal_year
+        description: Fiscal year of close date
+        data_type: integer
+
+      - name: sales_cycle_days
+        description: Days from created_date to close_date
+        data_type: integer
+
+      - name: account_name
+        description: Denormalized account name
+        data_type: string
+
+      - name: account_type
+        description: Denormalized account type
+        data_type: string
+
+      - name: industry
+        description: Denormalized industry vertical
+        data_type: string
+
+      - name: billing_country
+        description: Denormalized billing country
+        data_type: string
+
+      - name: owner_name
+        description: Denormalized sales rep name
+        data_type: string
+
+      - name: owner_email
+        description: Denormalized sales rep email
+        data_type: string

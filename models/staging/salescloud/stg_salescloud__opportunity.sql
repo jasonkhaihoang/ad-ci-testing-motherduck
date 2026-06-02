@@ -56,3 +56,5 @@ renamed as (
 select * from renamed
 
 -- VD-2229 validation bump
+
+-- e2e-and-PR-comments validation bump

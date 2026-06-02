@@ -891,7 +891,11 @@ jobs:
                   con = duckdb.connect(f"md:{db_name}?motherduck_token={token}")
                   title = f"CI build {db_name}"
                   content = "\n".join(f"SELECT * FROM {name} LIMIT 10;" for name in model_names)
-                  row = con.execute("SELECT dive_url FROM MD_CREATE_DIVE(?, ?)", [title, content]).fetchone()
+                  # MD_CREATE_DIVE signature: (required_resources, api_version, content, description, title)
+                  row = con.execute(
+                      "SELECT dive_url FROM MD_CREATE_DIVE([], 1, ?, ?, ?)",
+                      [content, "", title]
+                  ).fetchone()
                   dive_url = row[0] if row else None
                   con.close()
               except Exception as _e:

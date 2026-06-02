@@ -20,7 +20,9 @@ jobs:
           python-version: '3.11'
 
       - name: Install dbt-duckdb
-        run: pip install "dbt-duckdb" "duckdb==1.5.2" --quiet
+        run: |
+          DUCKDB_VERSION=$(curl -fsSL https://api.motherduck.com/latest_supported_duckdb_version.txt)
+          pip install "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - name: Parse dbt project
         run: |

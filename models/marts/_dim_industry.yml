@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: dim_industry
+    meta:
+      owner: "@jasonkhaihoang"
+    description: |
+      Dimension table of distinct industries derived from the account staging model.
+      One row per unique industry value. Supports market segmentation analysis.
+    columns:
+      - name: industry
+        description: Industry classification (primary key — distinct values)
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: account_count
+        description: Number of accounts in this industry
+        data_type: bigint
+        tests:
+          - not_null

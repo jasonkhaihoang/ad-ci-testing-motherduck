@@ -886,21 +886,44 @@ jobs:
           model_names = [n for n in model_names if n]
           if db_created and db_name and model_names:
               try:
-                  import duckdb
+                  import duckdb, urllib.parse
                   token = os.environ["MOTHERDUCK_TOKEN"]
                   con = duckdb.connect(f"md:{db_name}?motherduck_token={token}")
-                  title = f"CI build {db_name}"
-                  content = "\n".join(f"SELECT * FROM {name} LIMIT 10;" for name in model_names)
-                  # MD_CREATE_DIVE(required_resources STRUCT[], api_version UINTEGER, content, description, title)
+                  dive_title = f"CI build {db_name}"
+                  # JSX content: one useSQLQuery panel per model
+                  hooks = "\n  ".join(
+                      f'const {{ data: {n} }} = useSQLQuery("SELECT * FROM {n} LIMIT 20");'
+                      for n in model_names
+                  )
+                  panels = "\n      ".join(
+                      f'<div><h2>{n}</h2><pre>{{JSON.stringify({n}, null, 2)}}</pre></div>'
+                      for n in model_names
+                  )
+                  jsx = (
+                      'import { useSQLQuery } from "@motherduck/react-sql-query";\n'
+                      "export default function Dive() {\n"
+                      f"  {hooks}\n"
+                      "  return (\n"
+                      "    <div>\n"
+                      f"      {panels}\n"
+                      "    </div>\n"
+                      "  );\n"
+                      "}"
+                  )
+                  # MD_CREATE_DIVE uses = named args (not :=); returns id for URL construction
                   row = con.execute(
-                      "SELECT dive_url FROM MD_CREATE_DIVE("
-                      "  CAST([] AS STRUCT(url VARCHAR, alias VARCHAR)[]),"
-                      "  CAST(1 AS UINTEGER),"
-                      "  ?, ?, ?"
+                      "SELECT id, title FROM MD_CREATE_DIVE("
+                      "  title = ?,"
+                      "  content = ?,"
+                      "  description = ?"
                       ")",
-                      [content, "", title]
+                      [dive_title, jsx, f"CI build of {', '.join(model_names)}"]
                   ).fetchone()
-                  dive_url = row[0] if row else None
+                  if row:
+                      dive_id, _t = row[0], row[1]
+                      slug = urllib.parse.quote(dive_title, safe="")
+                      dive_url = f"https://app.motherduck.com/dives/{dive_id}/{slug}"
+                      print(f"Dive created: {dive_url}", flush=True)
                   con.close()
               except Exception as _e:
                   print(f"Warning: MD_CREATE_DIVE failed — {_e}", flush=True)

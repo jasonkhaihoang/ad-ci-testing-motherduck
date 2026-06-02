@@ -34,10 +34,23 @@ _VALID_KINDS = {
 }
 
 
+def _compact_node(node: dict) -> dict:
+    # Column names only (no metadata) — deliberately strips description, data_type, etc.
+    # to keep prompt small. Present/absent is all the LLM needs for column-level drift.
+    config = node.get("config", {})
+    result = {"columns": sorted(node.get("columns", {}).keys())}
+    if mat := config.get("materialized"):
+        result["materialization"] = mat
+    if uk := config.get("unique_key"):
+        result["unique_key"] = uk
+    return result
+
+
 def build_llm_prompt(design_text: str, manifest: dict, modified_names: list[str]) -> str:
     modified_set = set(modified_names)
-    modified_nodes = {
-        k: v for k, v in manifest.get("nodes", {}).items()
+    compact = {
+        v.get("name", k): _compact_node(v)
+        for k, v in manifest.get("nodes", {}).items()
         if v.get("name") in modified_set
     }
     return (
@@ -47,7 +60,7 @@ def build_llm_prompt(design_text: str, manifest: dict, modified_names: list[str]
         "with has_drift=false and an empty findings array.\n\n"
         f"=== design.md ===\n{design_text}\n\n"
         f"=== state:modified ===\n{json.dumps(sorted(modified_set))}\n\n"
-        f"=== manifest (modified nodes only) ===\n{json.dumps(modified_nodes, indent=2)}\n"
+        f"=== manifest (modified nodes only) ===\n{json.dumps(compact, indent=2)}\n"
     )
 
 

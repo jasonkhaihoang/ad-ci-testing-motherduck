@@ -19,6 +19,17 @@ def create_database_from_prod_sql(name: str, prod_db_name: str = "prd") -> str:
     return f"CREATE DATABASE {name} FROM {prod_db_name};"
 
 
+def clear_db_retention_sql(db_name: str) -> str:
+    """Render ALTER DATABASE <db_name> SET SNAPSHOT_RETENTION_DAYS = 0.
+
+    Called as a fallback when CREATE DATABASE … FROM <db_name> fails because
+    <db_name> has >0 snapshot retention incompatible with a free-plan account.
+    After this call the clone can be retried. No-op on databases that already
+    have 0-day retention.
+    """
+    return f"ALTER DATABASE {db_name} SET SNAPSHOT_RETENTION_DAYS = 0;"
+
+
 def drop_database_sql(name: str) -> str:
     """Render DROP DATABASE <name>."""
     return f"DROP DATABASE {name};"

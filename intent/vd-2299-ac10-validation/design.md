@@ -17,7 +17,8 @@ Bump the account staging model and add a new dim_industry mart to validate AC-10
 
 - **Materialization:** table
 - **Grain:** one row per account
-- **Change:** no structural change — pulled into closure as downstream of `stg_salescloud__account`
+- **Columns:** account_id, account_name, account_type, industry, billing_city, billing_state, billing_country, owner_id, created_date, last_modified_date
+- **Change:** no structural change — pulled into closure as downstream of `stg_salescloud__account`; `is_deleted` is intentionally excluded (filtered in staging layer)
 
 ### `fct_pipeline` (modified — descendant)
 

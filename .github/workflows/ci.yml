@@ -580,6 +580,7 @@ jobs:
       contents: read
       id-token: write
       statuses: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -764,11 +765,22 @@ jobs:
           token = os.environ["MOTHERDUCK_TOKEN"]
 
           db_name = ci_database.derive_ci_database_name(pr_number, head_sha_short)
-          sql = ci_database.create_database_from_prod_sql(db_name)
+          prod_db_name = "prd"
+          sql = ci_database.create_database_from_prod_sql(db_name, prod_db_name)
 
           import duckdb
           con = duckdb.connect(f"md:?motherduck_token={token}")
-          con.execute(sql)
+          try:
+              con.execute(sql)
+          except Exception as e:
+              if "retention" in str(e).lower():
+                  # Free-plan: prd has >0 snapshot retention which the plan can't inherit.
+                  # Reset prd to 0-day retention and retry. No-op on paid plans (CREATE
+                  # succeeds on the first try and this block is never reached).
+                  con.execute(ci_database.clear_db_retention_sql(prod_db_name))
+                  con.execute(sql)
+              else:
+                  raise
           con.close()
 
           runner_io.set_output("db_name", db_name)
@@ -791,7 +803,7 @@ jobs:
 
           with open(f"reports/deployment-manifest-{os.environ['HEAD_SHA']}.json") as f:
               dm = json.load(f)
-          names = [f"+{a['name']}" for a in dm.get("artifacts", [])]
+          names = [a['name'].split('.')[-1] for a in dm.get("artifacts", [])]
           if not names:
               print("No artifacts in deployment manifest — skipping dbt run")
               with open("reports/gate2_select.txt", "w"):
@@ -838,7 +850,18 @@ jobs:
           except (OSError, json.JSONDecodeError):
               pass
 
-          result = gate_2_result.assemble(db_created, run_results, head_sha)
+          manifest_materializations = {}
+          try:
+              with open(f"reports/deployment-manifest-{head_sha}.json") as _mf:
+                  _dm = json.load(_mf)
+              for _a in _dm.get("artifacts", []):
+                  _name = _a.get("name", "").split(".")[-1]
+                  if _name and _a.get("materialized"):
+                      manifest_materializations[_name] = _a["materialized"]
+          except (OSError, json.JSONDecodeError):
+              pass
+
+          result = gate_2_result.assemble(db_created, run_results, head_sha, manifest_materializations=manifest_materializations)
           os.makedirs("reports", exist_ok=True)
           with open("reports/gate-2.json", "w") as f:
               json.dump(result, f, indent=2)
@@ -977,6 +1000,9 @@ jobs:
           runner_io.set_env("MOTHERDUCK_TOKEN", token)
           EOF
 
+      - name: Install dbt packages
+        run: dbt deps --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
+
       - name: Run dbt unit tests
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -1025,6 +1051,8 @@ jobs:
               with open("reports/gate-3.json") as f:
                   summary = json.load(f)
               summary["modified_models"] = names
+              if summary.get("total", 0) == 0:
+                  summary["overall_status"] = "skipped"
               with open("reports/gate-3.json", "w") as f:
                   json.dump(summary, f)
           except (OSError, json.JSONDecodeError):
@@ -1079,7 +1107,16 @@ jobs:
           import emit_status
           run_url = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if os.environ["JOB_STATUS"] == "success":
-              state, desc = "success", "Gate 3: all unit tests passed"
+              try:
+                  import json as _json
+                  with open("reports/gate-3.json") as _f:
+                      _g3 = _json.load(_f)
+                  if _g3.get("overall_status") == "skipped":
+                      state, desc = "success", "Gate 3: skipped — no unit tests found"
+                  else:
+                      state, desc = "success", "Gate 3: all unit tests passed"
+              except (OSError, _json.JSONDecodeError):
+                  state, desc = "success", "Gate 3: all unit tests passed"
           else:
               state, desc = "failure", "Gate 3: unit tests failed — see PR comment"
           emit_status.emit_status(
@@ -1103,6 +1140,7 @@ jobs:
       contents: read
       id-token: write
       statuses: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -1157,3 +1195,31 @@ jobs:
           path: reports/gate-4.json
           if-no-files-found: ignore
           retention-days: 30
+
+      - name: Post gate-4 comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys
+          sys.path.insert(0, ".github/scripts")
+          import notify_render, pr_comment
+
+          result = None
+          try:
+              with open("reports/gate-4.json") as f:
+                  result = json.load(f)
+          except (OSError, json.JSONDecodeError):
+              pass
+
+          body = notify_render.render_gate_4_comment(result)
+          pr_comment.upsert(
+              notify_render.GATE_4_MARKER,
+              body,
+              os.environ["PR_NUMBER"],
+              os.environ["GITHUB_REPOSITORY"],
+          )
+          PYEOF

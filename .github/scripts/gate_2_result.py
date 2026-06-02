@@ -7,11 +7,13 @@ notify_render.render_gate_2_comment().
 from __future__ import annotations
 
 
-def _map_model(result: dict) -> dict:
+def _map_model(result: dict, manifest_materializations: dict[str, str] | None = None) -> dict:
     node = result.get("node") or {}
     name = node.get("name") or result.get("unique_id", "").split(".")[-1]
     rows_affected = (result.get("adapter_response") or {}).get("rows_affected")
     materialization = (node.get("config") or {}).get("materialized", "")
+    if not materialization:
+        materialization = (manifest_materializations or {}).get(name, "")
     return {
         "name": name,
         "status": result.get("status", ""),
@@ -25,6 +27,7 @@ def assemble(
     run_results: dict | None,
     head_sha: str,
     error: str | None = None,
+    manifest_materializations: dict[str, str] | None = None,
 ) -> dict:
     """Return the gate-2 result dict for render_gate_2_comment().
 
@@ -46,7 +49,7 @@ def assemble(
     clone_status = "pass" if db_created else "fail"
 
     raw_results = (run_results or {}).get("results") or []
-    build_models = [_map_model(r) for r in raw_results]
+    build_models = [_map_model(r, manifest_materializations or {}) for r in raw_results]
     build_failed = any(
         m["status"] not in ("success", "pass") for m in build_models
     )

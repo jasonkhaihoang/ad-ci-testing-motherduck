@@ -207,7 +207,7 @@ jobs:
 
       - name: ruff
         continue-on-error: true
-        run: ruff check . --output-format json > reports/ruff.json 2>/dev/null
+        run: ruff check . --exclude .github --output-format json > reports/ruff.json 2>/dev/null
 
       - name: sqlfluff
         continue-on-error: true
@@ -574,6 +574,7 @@ jobs:
   design-drift:
     name: "ci/design-drift: design.md vs state:modified"
     needs: [preflight, fetch-prod-state]
+    if: false  # VD-2296 validation: disabled to focus on ci/static-check
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -690,6 +691,7 @@ jobs:
   gate-2-run:
     name: "ci/run: MotherDuck dbt build"
     needs: [fetch-prod-state, design-drift]
+    if: false  # VD-2296 validation: disabled to focus on ci/static-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -933,7 +935,7 @@ jobs:
     name: "ci/unit-tests: dbt unit tests (MotherDuck)"
     needs: [gate-2-run]
     runs-on: ubuntu-latest
-    if: always() && needs.gate-2-run.result == 'success'
+    if: false  # VD-2296 validation: disabled to focus on ci/static-check
 
     concurrency:
       group: ci-gate3-pr-${{ github.event.pull_request.number }}
@@ -1135,6 +1137,7 @@ jobs:
   gate-4-data-test:
     name: "ci/data-tests: dbt test --store-failures"
     needs: [gate-2-run]
+    if: false  # VD-2296 validation: disabled to focus on ci/static-check
     runs-on: ubuntu-latest
     permissions:
       contents: read

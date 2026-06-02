@@ -179,7 +179,9 @@ jobs:
 
       - name: Install analysis tools
         run: |
-          pip install ruff sqlfluff pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
+          pip install ruff sqlfluff pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
           curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz \
             | tar xz -C /usr/local/bin gitleaks
 
@@ -407,7 +409,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
+      - name: Install dbt-duckdb
+        run: |
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
+          pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - name: Emit Gate 1 pending
         env:
@@ -574,7 +580,6 @@ jobs:
   design-drift:
     name: "ci/design-drift: design.md vs state:modified"
     needs: [preflight, fetch-prod-state]
-    if: false  # VD-2296 validation: disabled to focus on ci/static-check
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -589,7 +594,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
+      - name: Install dbt-duckdb
+        run: |
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
+          pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - name: Emit ci/design-drift pending
         env:
@@ -691,7 +700,6 @@ jobs:
   gate-2-run:
     name: "ci/run: MotherDuck dbt build"
     needs: [fetch-prod-state, design-drift]
-    if: false  # VD-2296 validation: disabled to focus on ci/static-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -701,7 +709,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dbt-duckdb
-        run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
+        run: |
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
+          pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - name: Emit ci/run pending
         env:
@@ -935,7 +946,7 @@ jobs:
     name: "ci/unit-tests: dbt unit tests (MotherDuck)"
     needs: [gate-2-run]
     runs-on: ubuntu-latest
-    if: false  # VD-2296 validation: disabled to focus on ci/static-check
+    if: always() && needs.gate-2-run.result == 'success'
 
     concurrency:
       group: ci-gate3-pr-${{ github.event.pull_request.number }}
@@ -951,7 +962,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dbt-duckdb
-        run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
+        run: |
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
+          pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - run: mkdir -p reports
 
@@ -1137,7 +1151,6 @@ jobs:
   gate-4-data-test:
     name: "ci/data-tests: dbt test --store-failures"
     needs: [gate-2-run]
-    if: false  # VD-2296 validation: disabled to focus on ci/static-check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1151,7 +1164,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - run: pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==1.5.2" --quiet
+      - name: Install dbt-duckdb
+        run: |
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
+          pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - uses: azure/login@v2
         with:

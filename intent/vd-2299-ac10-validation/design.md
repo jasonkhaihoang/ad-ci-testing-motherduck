@@ -12,6 +12,18 @@ Bump the account staging model and add a new dim_industry mart to validate AC-10
 - **Grain:** one row per Salesforce account (excluding soft-deleted records)
 - **Change:** comment-only validation bump — no structural change to columns, grain, or materialization
 
+### `dim_account` (modified — descendant)
+
+- **Materialization:** table
+- **Grain:** one row per Salesforce account
+- **Change:** no structural change — pulled into closure as downstream of `stg_salescloud__account`
+
+### `fct_pipeline` (modified — descendant)
+
+- **Materialization:** table
+- **Grain:** one row per open pipeline opportunity
+- **Change:** no structural change — pulled into closure as downstream of `stg_salescloud__account`
+
 ## Models added
 
 ### `dim_industry` (new)

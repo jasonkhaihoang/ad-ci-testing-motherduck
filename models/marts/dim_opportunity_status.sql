@@ -7,12 +7,12 @@ with opportunities as (
 stage_summary as (
     select
         stage_name,
-        count(*)                                         as opportunity_count,
-        count(*) filter (where is_won)                  as won_count,
-        count(*) filter (where is_closed and not is_won) as lost_count,
-        count(*) filter (where not is_closed)            as open_count,
-        sum(amount)                                      as total_pipeline_value,
-        avg(probability)                                 as avg_probability
+        count(*)                                                          as opportunity_count,
+        sum(case when is_won then 1 else 0 end)                           as won_count,
+        sum(case when is_closed and not is_won then 1 else 0 end)         as lost_count,
+        sum(case when not is_closed then 1 else 0 end)                    as open_count,
+        sum(amount)                                                        as total_pipeline_value,
+        avg(probability)                                                   as avg_probability
     from opportunities
     group by stage_name
 ),
@@ -24,7 +24,7 @@ final as (
 
         -- Stage classification
         case
-            when stage_name ilike '%closed won%'  then 'Won'
+            when stage_name ilike '%closed won%' then 'Won'
             when stage_name ilike '%closed lost%' then 'Lost'
             else 'Open'
         end                                                 as stage_category,
@@ -42,7 +42,7 @@ final as (
         -- Win rate (avoid divide-by-zero)
         case
             when opportunity_count > 0
-            then round(won_count * 100.0 / opportunity_count, 2)
+                then round(won_count * 100.0 / opportunity_count, 2)
         end                                                 as win_rate_pct
 
     from stage_summary

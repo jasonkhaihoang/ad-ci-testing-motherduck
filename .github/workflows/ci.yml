@@ -179,7 +179,8 @@ jobs:
 
       - name: Install analysis tools
         run: |
-          DUCKDB_VERSION=$(curl -fsSL https://api.motherduck.com/latest_supported_duckdb_version.txt)
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install ruff sqlfluff pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
           curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz \
             | tar xz -C /usr/local/bin gitleaks
@@ -410,7 +411,8 @@ jobs:
 
       - name: Install dbt-duckdb
         run: |
-          DUCKDB_VERSION=$(curl -fsSL https://api.motherduck.com/latest_supported_duckdb_version.txt)
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - name: Emit Gate 1 pending
@@ -594,7 +596,8 @@ jobs:
 
       - name: Install dbt-duckdb
         run: |
-          DUCKDB_VERSION=$(curl -fsSL https://api.motherduck.com/latest_supported_duckdb_version.txt)
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - name: Emit ci/design-drift pending
@@ -707,7 +710,8 @@ jobs:
 
       - name: Install dbt-duckdb
         run: |
-          DUCKDB_VERSION=$(curl -fsSL https://api.motherduck.com/latest_supported_duckdb_version.txt)
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - name: Emit ci/run pending
@@ -959,7 +963,8 @@ jobs:
 
       - name: Install dbt-duckdb
         run: |
-          DUCKDB_VERSION=$(curl -fsSL https://api.motherduck.com/latest_supported_duckdb_version.txt)
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - run: mkdir -p reports
@@ -1161,7 +1166,8 @@ jobs:
 
       - name: Install dbt-duckdb
         run: |
-          DUCKDB_VERSION=$(curl -fsSL https://api.motherduck.com/latest_supported_duckdb_version.txt)
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - uses: azure/login@v2

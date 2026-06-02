@@ -1,0 +1,56 @@
+version: 2
+
+models:
+  - name: dim_opportunity_status
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      Opportunity status dimension — aggregates all opportunities by sales stage,
+      providing win/loss/open counts, total pipeline value, and win rate per stage.
+      One row per distinct stage_name (grain: stage).
+    columns:
+      - name: opportunity_stage
+        description: Primary key — distinct sales stage name from Salesforce
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: stage_category
+        description: Simplified classification — Won, Lost, or Open
+        data_type: string
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Won', 'Lost', 'Open']
+
+      - name: opportunity_count
+        description: Total number of opportunities in this stage
+        data_type: integer
+        tests:
+          - not_null
+
+      - name: won_count
+        description: Number of won opportunities in this stage
+        data_type: integer
+
+      - name: lost_count
+        description: Number of lost (closed but not won) opportunities in this stage
+        data_type: integer
+
+      - name: open_count
+        description: Number of open (not yet closed) opportunities in this stage
+        data_type: integer
+
+      - name: total_pipeline_value
+        description: Sum of opportunity amounts for this stage
+        data_type: decimal
+
+      - name: avg_probability
+        description: Average close probability across opportunities in this stage
+        data_type: decimal
+
+      - name: win_rate_pct
+        description: Win rate as a percentage (won / total × 100), null if no opportunities
+        data_type: decimal

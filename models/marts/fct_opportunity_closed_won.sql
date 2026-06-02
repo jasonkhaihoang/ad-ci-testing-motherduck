@@ -2,8 +2,9 @@
 
 with opportunities as (
     select * from {{ ref('stg_salescloud__opportunity') }}
-    where is_closed = true
-      and is_won = true
+    where
+        is_closed = true
+        and is_won = true
 ),
 
 accounts as (
@@ -33,26 +34,27 @@ final as (
         opp.amount,
         opp.probability,
         opp.expected_revenue,
-        opp.amount * (opp.probability / 100.0) as weighted_amount,
+        opp.created_date,
 
         -- Dates
-        opp.created_date,
         opp.close_date,
         opp.fiscal_quarter,
         opp.fiscal_year,
+        acct.account_name,
 
         -- Sales velocity
-        datediff('day', cast(opp.created_date as date), opp.close_date) as sales_cycle_days,
+        acct.account_type,
 
         -- Denormalized account attributes
-        acct.account_name,
-        acct.account_type,
         acct.industry,
         acct.billing_country,
+        usr.user_name as owner_name,
+        usr.email as owner_email,
 
         -- Denormalized user attributes
-        usr.user_name as owner_name,
-        usr.email as owner_email
+        opp.amount * (opp.probability / 100.0) as weighted_amount,
+        datediff('day', cast(opp.created_date as date), opp.close_date)
+            as sales_cycle_days
 
     from opportunities as opp
 

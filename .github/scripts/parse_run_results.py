@@ -38,6 +38,7 @@ __all__ = [
     "check_store_failures_config",
     "gate_4_overall_status",
     "parse_data_test_results",
+    "enrich_tests_from_manifest",
 ]
 
 _FAILURE_CAP = 10
@@ -80,8 +81,7 @@ def summarize(run_results: dict) -> dict:
             counts["error"] += 1
             failures.append({"name": unique_id, "status": "error", "message": r.get("message") or ""})
 
-        model = _extract_model(unique_id) or (r.get("attached_node") or "").split(".")[-1]
-        tests.append({"name": unique_id, "model": model, "status": norm})
+        tests.append({"name": unique_id, "model": _extract_model(unique_id), "status": norm})
 
     truncated = len(failures) > _FAILURE_CAP
     overall = "fail" if (counts["fail"] or counts["error"]) else "pass"
@@ -121,6 +121,24 @@ def gate_4_overall_status(tests: list) -> str:
         return "error"
     has_fail = any(t.get("status") == "fail" for t in tests)
     return "fail" if has_fail else "pass"
+
+
+def enrich_tests_from_manifest(tests: list, nodes: dict) -> list:
+    """Fill blank model names in a tests list using manifest.json node entries.
+
+    Each node entry that has an `attached_node` field (e.g. `model.<proj>.<name>`)
+    provides the parent model name for the matching test unique_id. Only blank model
+    fields are updated; already-populated entries (unit tests via __) are left unchanged.
+    """
+    lookup = {
+        uid: v.get("attached_node", "").split(".")[-1]
+        for uid, v in nodes.items()
+        if isinstance(v, dict) and v.get("attached_node")
+    }
+    return [
+        {**t, "model": t["model"] or lookup.get(t["name"], "")}
+        for t in tests
+    ]
 
 
 def parse_data_test_results(run_results: dict) -> dict:

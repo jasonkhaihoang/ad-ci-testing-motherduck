@@ -1,4 +1,5 @@
 {{ config(materialized='table') }}
+-- vd-2306 verify bump
 
 with opportunities as (
     select * from {{ ref('stg_salescloud__opportunity') }}

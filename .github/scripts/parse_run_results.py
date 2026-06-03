@@ -80,7 +80,8 @@ def summarize(run_results: dict) -> dict:
             counts["error"] += 1
             failures.append({"name": unique_id, "status": "error", "message": r.get("message") or ""})
 
-        tests.append({"name": unique_id, "model": _extract_model(unique_id), "status": norm})
+        model = _extract_model(unique_id) or (r.get("attached_node") or "").split(".")[-1]
+        tests.append({"name": unique_id, "model": model, "status": norm})
 
     truncated = len(failures) > _FAILURE_CAP
     overall = "fail" if (counts["fail"] or counts["error"]) else "pass"

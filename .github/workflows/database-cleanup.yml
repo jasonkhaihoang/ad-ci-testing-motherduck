@@ -41,7 +41,8 @@ jobs:
 
       - name: Install duckdb
         run: |
-          DUCKDB_VERSION=$(curl -fsSL https://api.motherduck.com/latest_supported_duckdb_version.txt)
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install "duckdb==${DUCKDB_VERSION}" --quiet
 
       - name: Azure login (KV UAMI — OIDC)

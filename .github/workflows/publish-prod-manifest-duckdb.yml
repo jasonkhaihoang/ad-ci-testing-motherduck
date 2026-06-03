@@ -21,7 +21,8 @@ jobs:
 
       - name: Install dbt-duckdb
         run: |
-          DUCKDB_VERSION=$(curl -fsSL https://api.motherduck.com/latest_supported_duckdb_version.txt)
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
 
       - name: Parse dbt project

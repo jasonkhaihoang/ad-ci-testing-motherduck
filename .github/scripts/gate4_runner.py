@@ -36,7 +36,7 @@ except ImportError:
 
 import emit_status
 import kv_utils
-from parse_run_results import check_store_failures_config, parse_data_test_results
+from parse_run_results import check_store_failures_config, enrich_tests_from_manifest, parse_data_test_results
 
 CONTEXT = "ci/data-tests"
 PROFILE = "dbt_motherduck_ci"
@@ -55,6 +55,14 @@ def _post(head_sha: str, state: str, description: str) -> None:
     if not repo:
         return
     emit_status.emit_status(repo, head_sha, CONTEXT, state, description, _run_url())
+
+
+def _load_manifest_nodes(path: str) -> dict:
+    try:
+        with open(path) as f:
+            return json.load(f).get("nodes", {})
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 def _load_dbt_project(path: str) -> dict:
@@ -135,6 +143,8 @@ def cmd_run_gate(args) -> int:
         return 1
 
     summary = parse_data_test_results(run_results)
+    manifest_nodes = _load_manifest_nodes(args.manifest)
+    summary["tests"] = enrich_tests_from_manifest(summary["tests"], manifest_nodes)
     summary["store_failures_config_ok"] = store_failures_config_ok
 
     overall = summary["overall_status"]
@@ -171,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dbt-project", default="dbt_project.yml")
     p.add_argument("--profiles-dir", default=".github/profiles")
     p.add_argument("--run-results", default="target/run_results.json")
+    p.add_argument("--manifest", default="target/manifest.json")
     p.add_argument("--output", default=None)
     args = parser.parse_args(argv)
     return {"run-gate": cmd_run_gate}[args.command](args)

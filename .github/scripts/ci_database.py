@@ -40,6 +40,26 @@ def filter_pr_databases(all_db_names: Iterable[str]) -> list[str]:
     return [n for n in all_db_names if _PR_DB_RE.match(n)]
 
 
+def stale_pr_databases(
+    pr_databases: Iterable[str],
+    pr_number: int,
+    current_db_name: str,
+) -> list[str]:
+    """Return databases for `pr_number` that are not `current_db_name`.
+
+    Used by the gate-2 push-cleanup step to drop stale per-SHA databases
+    immediately after the new one is confirmed created.
+    """
+    result: list[str] = []
+    for name in pr_databases:
+        m = _PR_DB_RE.match(name)
+        if not m:
+            continue
+        if int(m.group(1)) == pr_number and name != current_db_name:
+            result.append(name)
+    return result
+
+
 def databases_to_drop(
     pr_databases: Iterable[str],
     open_pr_numbers: Iterable,

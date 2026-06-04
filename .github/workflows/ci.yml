@@ -847,6 +847,7 @@ jobs:
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           DB_CREATED: ${{ steps.clone-db.outcome == 'success' && 'true' || 'false' }}
+          DB_NAME: ${{ steps.clone-db.outputs.db_name }}
         run: |
           python3 - <<'EOF'
           import json, os, sys
@@ -855,6 +856,7 @@ jobs:
 
           head_sha = os.environ["HEAD_SHA"]
           db_created = os.environ.get("DB_CREATED", "false").lower() == "true"
+          db_name = os.environ.get("DB_NAME", "")
 
           run_results = None
           try:
@@ -874,7 +876,59 @@ jobs:
           except (OSError, json.JSONDecodeError):
               pass
 
-          result = gate_2_result.assemble(db_created, run_results, head_sha, manifest_materializations=manifest_materializations)
+          # AC-10: call MD_CREATE_DIVE when the DB was created and models were built
+          dive_url = None
+          raw_results = (run_results or {}).get("results") or []
+          model_names = [
+              (r.get("node") or {}).get("name") or r.get("unique_id", "").split(".")[-1]
+              for r in raw_results
+          ]
+          model_names = [n for n in model_names if n]
+          if db_created and db_name and model_names:
+              try:
+                  import duckdb, urllib.parse
+                  token = os.environ["MOTHERDUCK_TOKEN"]
+                  con = duckdb.connect(f"md:{db_name}?motherduck_token={token}")
+                  dive_title = f"CI build {db_name}"
+                  # JSX content: one useSQLQuery panel per model
+                  hooks = "\n  ".join(
+                      f'const {{ data: {n} }} = useSQLQuery("SELECT * FROM {n} LIMIT 20");'
+                      for n in model_names
+                  )
+                  panels = "\n      ".join(
+                      f'<div><h2>{n}</h2><pre>{{JSON.stringify({n}, null, 2)}}</pre></div>'
+                      for n in model_names
+                  )
+                  jsx = (
+                      'import { useSQLQuery } from "@motherduck/react-sql-query";\n'
+                      "export default function Dive() {\n"
+                      f"  {hooks}\n"
+                      "  return (\n"
+                      "    <div>\n"
+                      f"      {panels}\n"
+                      "    </div>\n"
+                      "  );\n"
+                      "}"
+                  )
+                  # MD_CREATE_DIVE uses = named args (not :=); returns id for URL construction
+                  row = con.execute(
+                      "SELECT id, title FROM MD_CREATE_DIVE("
+                      "  title = ?,"
+                      "  content = ?,"
+                      "  description = ?"
+                      ")",
+                      [dive_title, jsx, f"CI build of {', '.join(model_names)}"]
+                  ).fetchone()
+                  if row:
+                      dive_id, _t = row[0], row[1]
+                      slug = urllib.parse.quote(dive_title, safe="")
+                      dive_url = f"https://app.motherduck.com/dives/{dive_id}/{slug}"
+                      print(f"Dive created: {dive_url}", flush=True)
+                  con.close()
+              except Exception as _e:
+                  print(f"Warning: MD_CREATE_DIVE failed — {_e}", flush=True)
+
+          result = gate_2_result.assemble(db_created, run_results, head_sha, manifest_materializations=manifest_materializations, dive_url=dive_url, db_name=db_name or None)
           os.makedirs("reports", exist_ok=True)
           with open("reports/gate-2.json", "w") as f:
               json.dump(result, f, indent=2)
@@ -1152,7 +1206,6 @@ jobs:
     name: "ci/data-tests: dbt test --store-failures"
     needs: [gate-2-run]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write

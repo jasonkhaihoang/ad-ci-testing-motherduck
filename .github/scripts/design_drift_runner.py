@@ -2,7 +2,7 @@
 
 gather → call → dispatch:
   1. Read design.md, manifest.json, modified.json from disk.
-  2. Fetch CLAUDE_API_KEY from Azure Key Vault.
+  2. Read LLM_API_KEY from env.
   3. Build prompt; POST to Claude API; receive structured JSON via tool-use.
   4. Call run_design_drift (pure).
   5. Post ci/design-drift status; sys.exit(1) on drift or error.
@@ -13,12 +13,11 @@ Usage:
     design_drift_runner.py \\
         --pr-number 42 --head-sha abc123 --intent-id intent/sales \\
         --manifest target/manifest.json \\
-        --modified reports/modified.json \\
-        --claude-api-key-kv-name claude-api-key
+        --modified reports/modified.json
 
 Environment:
     GITHUB_REPOSITORY, GH_TOKEN, GITHUB_RUN_ID, GITHUB_SERVER_URL  (status post)
-    AZURE_KEYVAULT_URL                                              (consumed by kv_utils)
+    LLM_API_KEY                                                      (injected by workflow)
 """
 from __future__ import annotations
 
@@ -30,7 +29,6 @@ import urllib.error
 import urllib.request
 
 import emit_status
-import kv_utils
 import notify_render
 import pr_comment
 
@@ -145,14 +143,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--intent-id", required=True)
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--modified", required=True)
-    parser.add_argument("--claude-api-key-kv-name", required=True)
     args = parser.parse_args(argv)
 
     try:
         design_text = _read_text(_design_md_path(args.intent_id))
         manifest = json.loads(_read_text(args.manifest))
         modified_names = json.loads(_read_text(args.modified))
-        api_key = kv_utils.get_secret(args.claude_api_key_kv_name)
+        api_key = os.environ["LLM_API_KEY"]
         prompt = build_llm_prompt(design_text, manifest, modified_names)
         llm_response = call_claude(api_key, prompt)
     except Exception as e:  # gather/call failure → emit failure status, exit 1

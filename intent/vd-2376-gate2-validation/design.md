@@ -25,7 +25,7 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 
 - **Materialization:** view
 - **Grain:** one row per Salesforce account
-- **Columns:** account_id (PK), account_name, account_type, industry, billing_city, billing_state, billing_country, owner_id, is_deleted, created_date, last_modified_date
+- **Columns:** account_id (PK), account_type, industry, billing_city, billing_state, billing_country, owner_id, is_deleted, created_date, last_modified_date
 
 ### `stg_salescloud__user`
 
@@ -37,7 +37,7 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 
 - **Materialization:** view
 - **Grain:** one row per Salesforce opportunity line item
-- **Columns:** line_item_id (PK), opportunity_id, pricebook_entry_id, product_name, product_code, quantity, unit_price, total_price, discount, description, service_date, sort_order, created_date
+- **Columns:** line_item_id (PK), opportunity_id, product_id, pricebook_entry_id, product_name, product_code, quantity, unit_price, total_price, discount, description, service_date, sort_order, created_date
 
 ### `dim_account`
 

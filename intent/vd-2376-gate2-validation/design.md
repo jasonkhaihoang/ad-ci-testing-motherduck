@@ -24,8 +24,8 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 ### `stg_salescloud__account`
 
 - **Materialization:** view
-- **Grain:** one row per Salesforce account (excluding soft-deleted records)
-- **Columns:** account_id (PK), account_name, account_type, industry, billing_city, billing_state, billing_country, owner_id, created_date, last_modified_date
+- **Grain:** one row per Salesforce account
+- **Columns:** account_id (PK), account_name, account_type, industry, billing_city, billing_state, billing_country, owner_id, is_deleted, created_date, last_modified_date
 
 ### `stg_salescloud__user`
 
@@ -37,7 +37,7 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 
 - **Materialization:** view
 - **Grain:** one row per Salesforce opportunity line item
-- **Columns:** line_item_id (PK), opportunity_id, pricebook_entry_id, product_id, product_name, product_code, quantity, unit_price, total_price, created_date, last_modified_date
+- **Columns:** line_item_id (PK), opportunity_id, pricebook_entry_id, product_name, product_code, quantity, unit_price, total_price, discount, description, service_date, sort_order, created_date
 
 ### `dim_account`
 
@@ -68,13 +68,13 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 ### `fct_pipeline_monthly_product`
 
 - **Materialization:** table
-- **Grain:** one row per product per month per fiscal year
-- **Columns:** product_id, product_name, product_code, close_month, fiscal_year, opportunity_count, won_count, total_quantity, total_revenue, won_revenue
+- **Grain:** one row per product per close_month
+- **Columns:** close_month, product_id, product_code, product_name, total_revenue, won_revenue, lost_revenue, opportunity_count, won_opportunity_count, lost_opportunity_count, total_quantity, line_item_count, avg_deal_size, avg_unit_price, avg_discount, win_rate_pct, earliest_close_date, latest_close_date
 - **Upstream refs:** stg_salescloud__opportunitylineitem, stg_salescloud__opportunity
 
 ### `fct_sales_pipeline_by_stage`
 
 - **Materialization:** table
 - **Grain:** one row per stage per fiscal quarter per fiscal year
-- **Columns:** stage_name, fiscal_year, fiscal_quarter, opportunity_count, won_count, lost_count, total_amount, won_amount, avg_probability
+- **Columns:** stage_name, fiscal_year, fiscal_quarter, opportunity_count, won_count, lost_count, total_amount, weighted_amount, avg_probability
 - **Upstream refs:** stg_salescloud__opportunity

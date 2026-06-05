@@ -25,7 +25,6 @@ env:
   PYTHON_VERSION: "3.11"
 
 permissions:
-  id-token: write
   contents: read
   pull-requests: read
 
@@ -45,17 +44,9 @@ jobs:
             | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install "duckdb==${DUCKDB_VERSION}" --quiet
 
-      - name: Azure login (KV UAMI — OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_KV_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
       - name: Drop orphaned per-PR MotherDuck databases
         env:
-          AZURE_KEYVAULT_URL: ${{ vars.AZURE_KEYVAULT_URL }}
-          MOTHERDUCK_TOKEN_KV_NAME: ${{ vars.MOTHERDUCK_TOKEN_KV_NAME }}
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLEANUP_PR_NUMBER: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || '' }}

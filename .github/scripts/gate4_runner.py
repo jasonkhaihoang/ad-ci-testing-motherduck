@@ -1,6 +1,6 @@
 """Thin shell for Gate 4 (`ci/data-tests`) on MotherDuck.
 
-Orchestrates: KV fetch → dbt subprocess → run_results.json parse → GitHub status post.
+Orchestrates: env read → dbt subprocess → run_results.json parse → GitHub status post.
 All gate logic (pass/fail/error derivation, store-failures-config rule) lives in the
 shared thin interface `parse_run_results.py`; this module owns only I/O.
 
@@ -9,7 +9,6 @@ Usage:
         --pr-number 42 \
         --head-sha abc123def456 \
         --head-sha-short abc1234 \
-        --motherduck-token-kv-name my-md-token-kv \
         --deployment-manifest reports/deployment-manifest-abc123def456.json \
         --dbt-project dbt_project.yml \
         --profiles-dir .github/profiles \
@@ -18,7 +17,7 @@ Usage:
 
 Environment:
     GITHUB_REPOSITORY, GH_TOKEN, GITHUB_RUN_ID, GITHUB_SERVER_URL  (commit-status post)
-    AZURE_KEYVAULT_URL                                              (consumed by kv_utils)
+    MOTHERDUCK_TOKEN                                                 (injected by workflow)
 """
 from __future__ import annotations
 
@@ -35,7 +34,6 @@ except ImportError:
     yaml = None
 
 import emit_status
-import kv_utils
 from parse_run_results import check_store_failures_config, enrich_tests_from_manifest, parse_data_test_results
 
 CONTEXT = "ci/data-tests"
@@ -102,11 +100,8 @@ def cmd_run_gate(args) -> int:
 
     _post(args.head_sha, "pending", "Gate 4: dbt test --store-failures running")
 
-    token = kv_utils.get_secret(args.motherduck_token_kv_name)
-
     env = {
         **os.environ,
-        "MOTHERDUCK_TOKEN": token,
         "PR_NUMBER": str(args.pr_number),
         "HEAD_SHA_SHORT": args.head_sha_short,
     }
@@ -176,7 +171,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pr-number", required=True, type=int)
     p.add_argument("--head-sha", required=True)
     p.add_argument("--head-sha-short", required=True)
-    p.add_argument("--motherduck-token-kv-name", required=True)
     p.add_argument("--deployment-manifest", required=True)
     p.add_argument("--dbt-project", default="dbt_project.yml")
     p.add_argument("--profiles-dir", default=".github/profiles")

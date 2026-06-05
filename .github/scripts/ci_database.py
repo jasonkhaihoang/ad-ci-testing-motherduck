@@ -88,6 +88,62 @@ def databases_to_drop(
     return result
 
 
+_DIVE_TITLE_RE = re.compile(r"^CI build pr_(\d+)_[0-9a-f]+$")
+
+
+def derive_dive_title(pr_number: int, head_sha_short: str) -> str:
+    """Centralised Dive title: 'CI build pr_<N>_<sha>'. Shared by Gate 2 (create) and cleanup (match)."""
+    return f"CI build pr_{pr_number}_{head_sha_short}"
+
+
+def list_dives_sql() -> str:
+    """Render SELECT to list all Dives with their id and title."""
+    return "SELECT id, title FROM MD_LIST_DIVES();"
+
+
+def drop_dive_sql(dive_id: str) -> str:
+    """Render SELECT MD_DROP_DIVE(id = '<dive_id>').
+
+    dive_id is sourced from MD_LIST_DIVES() and assumed to be a MotherDuck-controlled
+    UUID (alphanumeric + dashes) — no shell-sensitive characters are expected.
+    """
+    return f"SELECT MD_DROP_DIVE(id = '{dive_id}');"
+
+
+def filter_pr_dives(all_dives: Iterable[dict]) -> list[dict]:
+    """Return only Dives whose title matches the CI build pr_<N>_<sha> convention."""
+    return [d for d in all_dives if _DIVE_TITLE_RE.match(d.get("title", ""))]
+
+
+def dives_to_drop(
+    pr_dives: Iterable[dict],
+    open_pr_numbers: Iterable,
+    closed_pr_number: int | None,
+) -> list[str]:
+    """Return Dive IDs to drop, mirroring databases_to_drop logic on Dive title+id.
+
+    - closed_pr_number given (PR-close): return IDs of every Dive for that PR.
+    - None (scheduled sweep): return IDs of Dives whose PR is not in open_pr_numbers.
+
+    Callers should pass output of filter_pr_dives — the inner title guard is defensive
+    and handles unfiltered input, but the canonical call site always pre-filters.
+    """
+    open_set = {int(n) for n in open_pr_numbers}
+    result: list[str] = []
+    for dive in pr_dives:
+        m = _DIVE_TITLE_RE.match(dive.get("title", ""))
+        if not m:
+            continue
+        pr_num = int(m.group(1))
+        if closed_pr_number is not None:
+            if pr_num == int(closed_pr_number):
+                result.append(dive["id"])
+        else:
+            if pr_num not in open_set:
+                result.append(dive["id"])
+    return result
+
+
 _E2E_SCENARIOS = ("greenfield", "incremental-modify", "incremental-staging")
 
 

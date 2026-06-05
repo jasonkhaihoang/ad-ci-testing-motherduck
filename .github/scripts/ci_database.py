@@ -88,6 +88,53 @@ def databases_to_drop(
     return result
 
 
+def extract_model_schemas(run_results: dict | None) -> dict[str, str]:
+    """Extract {model_name: schema} from dbt run_results.json.
+
+    Reads node.schema for each result. Defaults to 'main' when node.schema is
+    absent. Used by build_dive_jsx to qualify Dive query table references.
+    """
+    result: dict[str, str] = {}
+    for r in (run_results or {}).get("results", []):
+        node = r.get("node") or {}
+        name = node.get("name") or r.get("unique_id", "").split(".")[-1]
+        schema = node.get("schema") or "main"
+        if name:
+            result[name] = schema
+    return result
+
+
+def build_dive_jsx(db_name: str, model_schemas: dict[str, str]) -> str:
+    """Build Dive JSX content with fully-qualified table references.
+
+    Generates useSQLQuery hooks as db_name.schema.model so the Dive resolves
+    correctly in any MotherDuck user session, not just the CI runner's.
+    Returns an empty string when model_schemas is empty (caller guards on this).
+    """
+    if not model_schemas:
+        return ""
+    hooks = "\n  ".join(
+        f'const {{ data: {name} }} = useSQLQuery('
+        f'"SELECT * FROM {db_name}.{schema}.{name} LIMIT 20");'
+        for name, schema in model_schemas.items()
+    )
+    panels = "\n      ".join(
+        f'<div><h2>{name}</h2><pre>{{JSON.stringify({name}, null, 2)}}</pre></div>'
+        for name in model_schemas
+    )
+    return (
+        'import { useSQLQuery } from "@motherduck/react-sql-query";\n'
+        "export default function Dive() {\n"
+        f"  {hooks}\n"
+        "  return (\n"
+        "    <div>\n"
+        f"      {panels}\n"
+        "    </div>\n"
+        "  );\n"
+        "}"
+    )
+
+
 _E2E_SCENARIOS = ("greenfield", "incremental-modify", "incremental-staging")
 
 

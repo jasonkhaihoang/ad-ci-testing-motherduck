@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: dim_opportunity_type
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: Dimension table of distinct opportunity types from the sales pipeline.
+    columns:
+      - name: opportunity_type_id
+        description: Surrogate row number for opportunity type (ordered alphabetically)
+        data_type: bigint
+        tests:
+          - unique
+          - not_null
+      - name: opportunity_type
+        description: Opportunity type name (e.g. Existing Business, New Business)
+        data_type: varchar

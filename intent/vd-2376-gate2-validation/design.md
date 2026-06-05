@@ -9,7 +9,7 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 - **Materialization:** view
 - **Grain:** one row per Salesforce opportunity (excluding soft-deleted records)
 - **Change:** comment-only validation bump — no structural change to columns, grain, or materialization
-- **Columns:** opportunity_id (PK), account_id, owner_id, opportunity_name, stage_name, opportunity_type, lead_source, amount, probability, expected_revenue, weighted_amount, created_date, close_date, last_stage_change_date, is_closed, is_won, is_deleted, last_modified_date, system_modified_timestamp, fiscal_quarter, fiscal_year
+- **Columns:** opportunity_id (PK), account_id, owner_id, opportunity_name, stage_name, opportunity_type, lead_source, amount, probability, expected_revenue, created_date, close_date, last_stage_change_date, is_closed, is_won, is_deleted, last_modified_date, system_modified_timestamp, fiscal_quarter, fiscal_year
 
 ### `dim_opportunity_stage` (new)
 
@@ -18,3 +18,63 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 - **Columns:** stage_name (PK), opportunity_count, open_count, won_count, lost_count, total_amount, open_amount, won_amount, avg_probability
 - **Upstream refs:** stg_salescloud__opportunity
 - **Purpose:** Stage-level pipeline summary for reporting on opportunity distribution by stage
+
+## Downstream models (no structural change — included in state:modified+ closure)
+
+### `stg_salescloud__account`
+
+- **Materialization:** view
+- **Grain:** one row per Salesforce account (excluding soft-deleted records)
+- **Columns:** account_id (PK), account_name, account_type, industry, billing_city, billing_state, billing_country, owner_id, created_date, last_modified_date
+
+### `stg_salescloud__user`
+
+- **Materialization:** view
+- **Grain:** one row per Salesforce user
+- **Columns:** user_id (PK), user_name, email, username, job_title, user_role_id, profile_id, is_active, created_date, last_modified_date
+
+### `stg_salescloud__opportunitylineitem`
+
+- **Materialization:** view
+- **Grain:** one row per Salesforce opportunity line item
+- **Columns:** line_item_id (PK), opportunity_id, pricebook_entry_id, product_id, product_name, product_code, quantity, unit_price, total_price, created_date, last_modified_date
+
+### `dim_account`
+
+- **Materialization:** table
+- **Grain:** one row per Salesforce account
+- **Columns:** account_id (PK), account_name, account_type, industry, billing_city, billing_state, billing_country, owner_id, created_date, last_modified_date
+
+### `dim_user`
+
+- **Materialization:** table
+- **Grain:** one row per Salesforce user
+- **Columns:** user_id (PK), user_name, email, username, job_title, user_role_id, profile_id, is_active, created_date, last_modified_date
+
+### `fct_opportunity_closed_won`
+
+- **Materialization:** table
+- **Grain:** one row per closed-won opportunity
+- **Columns:** opportunity_id (PK), account_id, owner_id, opportunity_name, stage_name, opportunity_type, lead_source, amount, probability, expected_revenue, weighted_amount, created_date, close_date, fiscal_quarter, fiscal_year, sales_cycle_days, account_name, account_type, industry, billing_country, owner_name, owner_email
+- **Upstream refs:** stg_salescloud__opportunity, dim_account, dim_user
+
+### `fct_pipeline`
+
+- **Materialization:** table
+- **Grain:** one row per opportunity
+- **Columns:** opportunity_id (PK), account_id, owner_id, opportunity_name, stage_name, opportunity_type, lead_source, amount, probability, expected_revenue, weighted_amount, created_date, close_date, last_stage_change_date, is_closed, is_won, forecast_category, sales_cycle_days, opportunity_age_days, days_in_current_stage, is_orphaned_opportunity, is_zero_value, last_modified_date, system_modified_timestamp, account_name, account_type, industry, billing_city, billing_state, billing_country, owner_name, owner_email, owner_is_active
+- **Upstream refs:** stg_salescloud__opportunity, dim_account, dim_user
+
+### `fct_pipeline_monthly_product`
+
+- **Materialization:** table
+- **Grain:** one row per product per month per fiscal year
+- **Columns:** product_id, product_name, product_code, close_month, fiscal_year, opportunity_count, won_count, total_quantity, total_revenue, won_revenue
+- **Upstream refs:** stg_salescloud__opportunitylineitem, stg_salescloud__opportunity
+
+### `fct_sales_pipeline_by_stage`
+
+- **Materialization:** table
+- **Grain:** one row per stage per fiscal quarter per fiscal year
+- **Columns:** stage_name, fiscal_year, fiscal_quarter, opportunity_count, won_count, lost_count, total_amount, won_amount, avg_probability
+- **Upstream refs:** stg_salescloud__opportunity

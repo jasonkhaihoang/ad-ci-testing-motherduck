@@ -3,14 +3,13 @@ version: 2
 models:
   - name: dim_account_type
     description: |
-      Account dimension grouped by type and industry.
-      One row per (account_type, industry) combination with a count of accounts.
-      Added for VD-2380 validation — exercises the Dive qualified-ref fix (AC-10).
+      Account counts grouped by type and industry.
+      Added for VD-2380 validation.
     meta:
       owner: "@jasonkhaihoang"
     columns:
       - name: account_type
-        description: Account classification (e.g., Customer, Prospect, Partner). 'Unknown' when null.
+        description: Account classification. 'Unknown' when null.
         data_type: string
         tests:
           - not_null

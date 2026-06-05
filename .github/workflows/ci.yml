@@ -17,7 +17,6 @@ permissions:
   pull-requests: write
   statuses: write
   actions: read    # gh run list / download for prod-manifest-duckdb artifact
-  id-token: write  # Azure OIDC login for Key Vault secret fetch (MOTHERDUCK_TOKEN)
 
 env:
   PYTHON_VERSION: "3.11"
@@ -927,6 +926,8 @@ jobs:
     needs: [gate-2-run]
     runs-on: ubuntu-latest
     if: false  # skipped for VD-2381 validation
+    env:
+      MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
 
     concurrency:
       group: ci-gate3-pr-${{ github.event.pull_request.number }}
@@ -974,27 +975,6 @@ jobs:
         with:
           name: deployment-manifest-${{ github.event.pull_request.head.sha }}
           path: reports/
-
-      - name: Login — KV UAMI
-        uses: azure/login@v3
-        with:
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          client-id: ${{ vars.AZURE_KV_CLIENT_ID }}
-          allow-no-subscriptions: true
-
-      - name: Fetch MOTHERDUCK_TOKEN
-        env:
-          AZURE_KEYVAULT_URL: ${{ vars.AZURE_KEYVAULT_URL }}
-          MOTHERDUCK_TOKEN_KV_NAME: ${{ vars.MOTHERDUCK_TOKEN_KV_NAME }}
-        run: |
-          python3 - <<'EOF'
-          import os, sys
-          sys.path.insert(0, ".github/scripts")
-          import kv_utils, runner_io
-          token = kv_utils.get_secret(os.environ["MOTHERDUCK_TOKEN_KV_NAME"])
-          runner_io.mask(token)
-          runner_io.set_env("MOTHERDUCK_TOKEN", token)
-          EOF
 
       - name: Install dbt packages
         run: dbt deps --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
@@ -1127,7 +1107,7 @@ jobs:
 
   # ─── GATE 4 — CI/DATA-TESTS ───────────────────────────────────────────────────
   # `dbt test --store-failures` against the per-PR clone (md:pr_<N>_<sha>) created by Gate 2.
-  # gate4_runner.py is a thin shell: KV fetch → dbt subprocess → run_results parse → status post.
+  # gate4_runner.py is a thin shell: env read → dbt subprocess → run_results parse → status post.
   gate-4-data-test:
     name: "ci/data-tests: SKIPPED for VD-2381 validation"
     needs: [gate-2-run]
@@ -1135,7 +1115,6 @@ jobs:
     if: false  # skipped for VD-2381 validation
     permissions:
       contents: read
-      id-token: write
       statuses: write
       pull-requests: write
     steps:
@@ -1150,12 +1129,6 @@ jobs:
           DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
-
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_KV_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Download deployment manifest
         uses: actions/download-artifact@v4
@@ -1173,15 +1146,13 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
-          AZURE_KEYVAULT_URL: ${{ vars.AZURE_KEYVAULT_URL }}
-          MOTHERDUCK_TOKEN_KV_NAME: ${{ vars.MOTHERDUCK_TOKEN_KV_NAME }}
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
         run: |
           mkdir -p reports
           python3 ${{ env.SCRIPTS }}/gate4_runner.py run-gate \
             --pr-number "${{ github.event.pull_request.number }}" \
             --head-sha "${{ github.event.pull_request.head.sha }}" \
             --head-sha-short "${{ steps.sha.outputs.short }}" \
-            --motherduck-token-kv-name "${MOTHERDUCK_TOKEN_KV_NAME:-motherduck-ci-token}" \
             --deployment-manifest "reports/deployment-manifest-${{ github.event.pull_request.head.sha }}.json" \
             --dbt-project "dbt_project.yml" \
             --profiles-dir ".github/profiles" \

@@ -13,7 +13,8 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 ### `dim_opportunity_stage` (new)
 
 - **Materialization:** table
-- **Grain:** one row per distinct opportunity stage_name
+- **Grain:** one row per opportunity stage, aggregating counts and amounts across all opportunities in that stage
+- **Columns:** stage_name, opportunity_count, open_count, won_count, lost_count, total_amount, open_amount, won_amount, avg_probability
 - **Upstream refs:** stg_salescloud__opportunity
 
 ## Downstream models (no structural change — included in state:modified+ closure)
@@ -33,6 +34,7 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 ### `dim_account`
 
 - **Materialization:** table
+- **Note:** `is_deleted` is intentionally excluded — dim_account exposes only active account attributes
 
 ### `dim_user`
 

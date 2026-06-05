@@ -120,3 +120,43 @@ def derive_e2e_db_name(scenario: str, run_id: str) -> str:
     scenario_safe = scenario.replace("-", "_")
     run_id_short = run_id.lower().replace("-", "")[:8]
     return f"pr_e2e_{scenario_safe}_{run_id_short}"
+
+
+_DIVE_TITLE_RE = re.compile(r"^CI build pr_(\d+)_[0-9a-f]+$")
+
+
+def derive_dive_title(pr_number: int, head_sha_short: str) -> str:
+    """Canonical Dive title: 'CI build pr_<N>_<sha>'. Used by cleanup (match); Gate 2 migration pending."""
+    return f"CI build pr_{pr_number}_{head_sha_short}"
+
+
+def list_dives_sql() -> str:
+    """Render SELECT to list all Dives with their id and title."""
+    return "SELECT id, title FROM MD_LIST_DIVES();"
+
+
+def drop_dive_sql(dive_id: str) -> str:
+    """Render SELECT * FROM MD_DELETE_DIVE(id = '<dive_id>'::UUID).
+
+    dive_id is sourced from MD_LIST_DIVES() and is a MotherDuck-controlled UUID.
+    The ::UUID cast is required by MD_DELETE_DIVE's parameter type.
+    """
+    return f"SELECT * FROM MD_DELETE_DIVE(id = '{dive_id}'::UUID);"
+
+
+def filter_pr_dives(all_dives: Iterable[dict]) -> list[dict]:
+    """Return only Dives whose title matches the CI build pr_<N>_<sha> convention."""
+    return [d for d in all_dives if _DIVE_TITLE_RE.match(d.get("title", ""))]
+
+
+def stale_pr_dives(
+    pr_dives: Iterable[dict],
+    stale_db_names: Iterable[str],
+) -> list[str]:
+    """Return Dive IDs whose title matches 'CI build <db_name>' for any name in stale_db_names.
+
+    Used by the synchronize cleanup path: for each stale database being dropped,
+    the Dive with the matching title is also dropped.
+    """
+    titles = {f"CI build {name}" for name in stale_db_names}
+    return [d["id"] for d in pr_dives if d.get("title") in titles]

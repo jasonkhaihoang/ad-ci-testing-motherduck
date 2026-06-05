@@ -24,7 +24,7 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 
 - **Materialization:** view
 - **Grain:** one row per Salesforce account
-- **Columns:** account_id, account_name, account_type, industry, billing_city, billing_state, billing_country, owner_id, is_deleted, created_date, last_modified_date
+- **Columns:** account_id, account_type, industry, billing_city, billing_state, billing_country, owner_id, is_deleted, created_date, last_modified_date
 
 ### `stg_salescloud__user`
 
@@ -66,7 +66,7 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 
 - **Materialization:** table
 - **Grain:** one row per product per close_month
-- **Columns:** close_month, product_id, product_code, product_name, total_revenue, won_revenue, lost_revenue, opportunity_count, won_opportunity_count, lost_opportunity_count, total_quantity, line_item_count, avg_deal_size, avg_unit_price, avg_discount, win_rate_pct, earliest_close_date, latest_close_date
+- **Columns:** close_month, product_id, product_code, product_name, total_revenue, won_revenue, lost_revenue, opportunity_count, won_opportunity_count, lost_opportunity_count, total_quantity, line_item_count, avg_deal_size, avg_unit_price, avg_discount, earliest_close_date, latest_close_date
 
 ### `fct_sales_pipeline_by_stage`
 

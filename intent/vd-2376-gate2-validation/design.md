@@ -7,7 +7,7 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 ### `stg_salescloud__opportunity` (modified)
 
 - **Materialization:** view
-- **Grain:** one row per Salesforce opportunity (excluding soft-deleted records)
+- **Grain:** one row per Salesforce opportunity; is_deleted = false filter applied; is_deleted column exposed for downstream use
 - **Change:** comment-only validation bump — no structural change
 
 ### `dim_opportunity_stage` (new)
@@ -34,7 +34,6 @@ Validation intent for VD-2376 — MotherDuck Dive cleanup alongside database on 
 ### `dim_account`
 
 - **Materialization:** table
-- **Note:** `is_deleted` is intentionally excluded — dim_account exposes only active account attributes
 
 ### `dim_user`
 

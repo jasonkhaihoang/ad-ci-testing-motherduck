@@ -102,12 +102,13 @@ def list_dives_sql() -> str:
 
 
 def drop_dive_sql(dive_id: str) -> str:
-    """Render SELECT MD_DELETE_DIVE(id = '<dive_id>').
+    """Render SELECT * FROM MD_DELETE_DIVE(id => '<dive_id>').
 
+    MD_DELETE_DIVE is a table function; it must be called in a FROM clause.
     dive_id is sourced from MD_LIST_DIVES() and assumed to be a MotherDuck-controlled
     UUID (alphanumeric + dashes) — no shell-sensitive characters are expected.
     """
-    return f"SELECT MD_DELETE_DIVE(id = '{dive_id}');"
+    return f"SELECT * FROM MD_DELETE_DIVE(id => '{dive_id}');"
 
 
 def filter_pr_dives(all_dives: Iterable[dict]) -> list[dict]:

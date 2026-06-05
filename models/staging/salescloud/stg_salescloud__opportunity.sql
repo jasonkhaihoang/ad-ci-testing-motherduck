@@ -60,3 +60,5 @@ select * from renamed
 -- e2e-and-PR-comments validation bump
 
 -- VD-2295 validation bump
+
+-- VD-2295 validation bump push 2

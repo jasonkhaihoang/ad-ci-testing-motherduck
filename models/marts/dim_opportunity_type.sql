@@ -8,8 +8,7 @@ with opportunities as (
 
 types as (
 
-    select distinct
-        opportunity_type
+    select distinct opportunity_type
     from opportunities
     where opportunity_type is not null
 
@@ -18,8 +17,8 @@ types as (
 final as (
 
     select
-        row_number() over (order by opportunity_type) as opportunity_type_id,
-        opportunity_type
+        opportunity_type,
+        row_number() over (order by opportunity_type) as opportunity_type_id
     from types
 
 )

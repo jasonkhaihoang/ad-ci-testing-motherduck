@@ -132,7 +132,7 @@ def build_dive_jsx(db_name: str, model_schemas: dict[str, str]) -> str:
         for name, schema in model_schemas.items()
     )
     panels = "\n      ".join(
-        f'<div><h2>{name}</h2><pre>{{JSON.stringify({name}, null, 2)}}</pre></div>'
+        f"<div><h2>{name}</h2><pre>{{JSON.stringify({name}, (_, v) => typeof v === 'bigint' ? v.toString() : v, 2)}}</pre></div>"
         for name in model_schemas
     )
     return (

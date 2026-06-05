@@ -10,18 +10,23 @@ stage_summary as (
         stage_name,
 
         -- Stage counts
-        count(*)                                        as opportunity_count,
-        count(case when not is_closed then 1 end)       as open_count,
-        count(case when is_closed and is_won then 1 end) as won_count,
-        count(case when is_closed and not is_won then 1 end) as lost_count,
+        count(*) as opportunity_count,
+
+        count(case when is_closed = false then 1 end) as open_count,
+
+        count(case when is_closed = true and is_won = true then 1 end) as won_count,
+
+        count(case when is_closed = true and is_won = false then 1 end) as lost_count,
 
         -- Stage amounts
-        sum(amount)                                     as total_amount,
-        sum(case when not is_closed then amount end)    as open_amount,
-        sum(case when is_closed and is_won then amount end) as won_amount,
+        sum(amount) as total_amount,
 
-        -- Stage probability (average weighted)
-        avg(probability)                                as avg_probability
+        sum(case when is_closed = false then amount end) as open_amount,
+
+        sum(case when is_closed = true and is_won = true then amount end) as won_amount,
+
+        -- Average win probability
+        avg(probability) as avg_probability
 
     from opportunities
     group by stage_name

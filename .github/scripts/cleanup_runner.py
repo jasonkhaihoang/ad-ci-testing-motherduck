@@ -4,7 +4,7 @@ Invoked by `database-cleanup.yml` on two triggers:
   - `pull_request_target: closed`  — CLEANUP_PR_NUMBER set to the closed PR
   - `schedule` / `workflow_dispatch` — CLEANUP_PR_NUMBER unset; sweep orphans
 
-Owns every I/O seam (KV fetch, MotherDuck connection, `gh api` for open-PR list,
+Owns every I/O seam (MotherDuck connection, `gh api` for open-PR list,
 DROP DATABASE execution). Filtering and drop-set derivation live in the pure
 `ci_database` thin interfaces.
 """
@@ -16,7 +16,6 @@ import sys
 import duckdb
 
 import ci_database
-import kv_utils
 import runner_io
 
 
@@ -30,12 +29,11 @@ def _fetch_open_pr_numbers(repo: str) -> list[int]:
 
 
 def main() -> None:
-    token_kv_name = os.environ.get("MOTHERDUCK_TOKEN_KV_NAME") or "motherduck-ci-token"
+    token = os.environ["MOTHERDUCK_TOKEN"]
     repo = os.environ["GITHUB_REPOSITORY"]
     closed_pr_env = os.environ.get("CLEANUP_PR_NUMBER")
     closed_pr_number = int(closed_pr_env) if closed_pr_env else None
 
-    token = kv_utils.get_secret(token_kv_name)
     runner_io.mask(token)
 
     con = duckdb.connect(f"md:?motherduck_token={token}")

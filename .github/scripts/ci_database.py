@@ -88,6 +88,66 @@ def databases_to_drop(
     return result
 
 
+def _schema_from_relation_name(relation_name: str) -> str:
+    """Extract schema from a dbt relation_name like '"db"."stg"."model"'."""
+    if not relation_name:
+        return ""
+    parts = relation_name.replace('"', '').split('.')
+    return parts[1] if len(parts) == 3 else ""
+
+
+def extract_model_schemas(run_results: dict | None) -> dict[str, str]:
+    """Extract {model_name: schema} from dbt run_results.json.
+
+    Reads the top-level relation_name field (e.g. '"db"."stg"."model"') to get
+    the actual rendered schema. Falls back to node.schema, then to 'main'.
+    node.schema holds the profile-level default, not the custom schema override.
+    """
+    result: dict[str, str] = {}
+    for r in (run_results or {}).get("results", []):
+        node = r.get("node") or {}
+        name = node.get("name") or r.get("unique_id", "").split(".")[-1]
+        schema = (
+            _schema_from_relation_name(r.get("relation_name") or "")
+            or node.get("schema")
+            or "main"
+        )
+        if name:
+            result[name] = schema
+    return result
+
+
+def build_dive_jsx(db_name: str, model_schemas: dict[str, str]) -> str:
+    """Build Dive JSX content with fully-qualified table references.
+
+    Generates useSQLQuery hooks as db_name.schema.model so the Dive resolves
+    correctly in any MotherDuck user session, not just the CI runner's.
+    Returns an empty string when model_schemas is empty (caller guards on this).
+    """
+    if not model_schemas:
+        return ""
+    hooks = "\n  ".join(
+        f'const {{ data: {name} }} = useSQLQuery('
+        f'"SELECT * FROM {db_name}.{schema}.{name} LIMIT 20");'
+        for name, schema in model_schemas.items()
+    )
+    panels = "\n      ".join(
+        f"<div><h2>{name}</h2><pre>{{JSON.stringify({name}, (_, v) => typeof v === 'bigint' ? v.toString() : v, 2)}}</pre></div>"
+        for name in model_schemas
+    )
+    return (
+        'import { useSQLQuery } from "@motherduck/react-sql-query";\n'
+        "export default function Dive() {\n"
+        f"  {hooks}\n"
+        "  return (\n"
+        "    <div>\n"
+        f"      {panels}\n"
+        "    </div>\n"
+        "  );\n"
+        "}"
+    )
+
+
 _E2E_SCENARIOS = ("greenfield", "incremental-modify", "incremental-staging")
 
 

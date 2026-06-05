@@ -88,17 +88,30 @@ def databases_to_drop(
     return result
 
 
+def _schema_from_relation_name(relation_name: str) -> str:
+    """Extract schema from a dbt relation_name like '"db"."stg"."model"'."""
+    if not relation_name:
+        return ""
+    parts = relation_name.replace('"', '').split('.')
+    return parts[1] if len(parts) == 3 else ""
+
+
 def extract_model_schemas(run_results: dict | None) -> dict[str, str]:
     """Extract {model_name: schema} from dbt run_results.json.
 
-    Reads node.schema for each result. Defaults to 'main' when node.schema is
-    absent. Used by build_dive_jsx to qualify Dive query table references.
+    Reads the top-level relation_name field (e.g. '"db"."stg"."model"') to get
+    the actual rendered schema. Falls back to node.schema, then to 'main'.
+    node.schema holds the profile-level default, not the custom schema override.
     """
     result: dict[str, str] = {}
     for r in (run_results or {}).get("results", []):
         node = r.get("node") or {}
         name = node.get("name") or r.get("unique_id", "").split(".")[-1]
-        schema = node.get("schema") or "main"
+        schema = (
+            _schema_from_relation_name(r.get("relation_name") or "")
+            or node.get("schema")
+            or "main"
+        )
         if name:
             result[name] = schema
     return result

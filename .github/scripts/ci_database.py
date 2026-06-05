@@ -136,12 +136,12 @@ def list_dives_sql() -> str:
 
 
 def drop_dive_sql(dive_id: str) -> str:
-    """Render SELECT MD_DROP_DIVE(id = '<dive_id>').
+    """Render SELECT * FROM MD_DELETE_DIVE(id = '<dive_id>'::UUID).
 
-    dive_id is sourced from MD_LIST_DIVES() and assumed to be a MotherDuck-controlled
-    UUID (alphanumeric + dashes) — no shell-sensitive characters are expected.
+    dive_id is sourced from MD_LIST_DIVES() and is a MotherDuck-controlled UUID.
+    The ::UUID cast is required by MD_DELETE_DIVE's parameter type.
     """
-    return f"SELECT MD_DROP_DIVE(id = '{dive_id}');"
+    return f"SELECT * FROM MD_DELETE_DIVE(id = '{dive_id}'::UUID);"
 
 
 def filter_pr_dives(all_dives: Iterable[dict]) -> list[dict]:

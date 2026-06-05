@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: dim_account_type
+    description: |
+      Account counts grouped by type and industry.
+      Added for VD-2380 validation.
+    meta:
+      owner: "@jasonkhaihoang"
+    columns:
+      - name: account_type
+        description: Account classification. 'Unknown' when null.
+        data_type: string
+        tests:
+          - not_null
+
+      - name: industry
+        description: Industry vertical. 'Unknown' when null.
+        data_type: string
+        tests:
+          - not_null
+
+      - name: account_count
+        description: Number of accounts in this type/industry combination.
+        data_type: bigint
+        tests:
+          - not_null

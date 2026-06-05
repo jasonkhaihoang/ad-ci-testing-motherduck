@@ -19,6 +19,15 @@ on:
   schedule:
     - cron: "0 2 * * *"
   workflow_dispatch:
+    inputs:
+      cleanup_pr_number:
+        description: "PR number to simulate synchronize cleanup (for VD-2381 testing)"
+        required: false
+        type: string
+      head_sha:
+        description: "New head SHA to keep (simulate synchronize event)"
+        required: false
+        type: string
   pull_request_target:
     types: [closed, synchronize]
 
@@ -50,8 +59,8 @@ jobs:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CLEANUP_PR_NUMBER: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || '' }}
-          HEAD_SHA: ${{ github.event.action == 'synchronize' && github.event.pull_request.head.sha || '' }}
+          CLEANUP_PR_NUMBER: ${{ inputs.cleanup_pr_number || (github.event_name == 'pull_request_target' && github.event.pull_request.number || '') }}
+          HEAD_SHA: ${{ inputs.head_sha || (github.event.action == 'synchronize' && github.event.pull_request.head.sha || '') }}
         run: |
           python3 - <<'EOF'
           import sys

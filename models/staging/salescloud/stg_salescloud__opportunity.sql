@@ -58,3 +58,4 @@ select * from renamed
 -- VD-2229 validation bump
 
 -- e2e-and-PR-comments validation bump
+-- VD-2376 gate2-validation bump

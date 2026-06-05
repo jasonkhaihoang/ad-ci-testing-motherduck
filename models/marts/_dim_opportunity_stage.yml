@@ -1,0 +1,51 @@
+version: 2
+
+models:
+  - name: dim_opportunity_stage
+    config:
+      meta:
+        owner: jason.khai.hoang@acceleratedata.ai
+    description: |
+      Stage-level summary dimension: one row per distinct opportunity stage,
+      aggregating counts and amounts across open, won, and lost opportunities.
+    columns:
+      - name: stage_name
+        description: Salesforce opportunity stage name (primary key)
+        data_type: string
+        tests:
+          - unique
+          - not_null
+
+      - name: opportunity_count
+        description: Total number of opportunities in this stage
+        data_type: integer
+        tests:
+          - not_null
+
+      - name: open_count
+        description: Count of currently open opportunities in this stage
+        data_type: integer
+
+      - name: won_count
+        description: Count of closed-won opportunities in this stage
+        data_type: integer
+
+      - name: lost_count
+        description: Count of closed-lost opportunities in this stage
+        data_type: integer
+
+      - name: total_amount
+        description: Total pipeline amount across all opportunities in this stage
+        data_type: decimal
+
+      - name: open_amount
+        description: Pipeline amount for open opportunities in this stage
+        data_type: decimal
+
+      - name: won_amount
+        description: Revenue amount for closed-won opportunities in this stage
+        data_type: decimal
+
+      - name: avg_probability
+        description: Average win probability for opportunities in this stage
+        data_type: decimal

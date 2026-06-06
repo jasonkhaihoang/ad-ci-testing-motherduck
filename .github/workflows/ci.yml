@@ -655,6 +655,8 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_API_URL: ${{ vars.LLM_API_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
         run: |
           python3 ${{ env.SCRIPTS }}/design_drift_runner.py \
             --pr-number  "${{ github.event.pull_request.number }}" \
@@ -854,7 +856,7 @@ jobs:
           python3 - <<'EOF'
           import json, os, sys
           sys.path.insert(0, ".github/scripts")
-          import gate_2_result, ci_database
+          import ci_database, gate_2_result
 
           head_sha = os.environ["HEAD_SHA"]
           db_created = os.environ.get("DB_CREATED", "false").lower() == "true"
@@ -880,41 +882,14 @@ jobs:
 
           # AC-10: call MD_CREATE_DIVE when the DB was created and models were built
           dive_url = None
-          raw_results = (run_results or {}).get("results") or []
-          model_names = [
-              (r.get("node") or {}).get("name") or r.get("unique_id", "").split(".")[-1]
-              for r in raw_results
-          ]
-          model_names = [n for n in model_names if n]
-          if db_created and db_name and model_names:
+          model_schemas = ci_database.extract_model_schemas(run_results)
+          if db_created and db_name and model_schemas:
               try:
                   import duckdb, urllib.parse
                   token = os.environ["MOTHERDUCK_TOKEN"]
                   con = duckdb.connect(f"md:{db_name}?motherduck_token={token}")
-                  # Use centralised title so cleanup matches by the same convention (AC-29)
-                  dive_title = ci_database.derive_dive_title(
-                      int(os.environ["PR_NUMBER"]), os.environ["HEAD_SHA_SHORT"][:7]
-                  )
-                  # JSX content: one useSQLQuery panel per model
-                  hooks = "\n  ".join(
-                      f'const {{ data: {n} }} = useSQLQuery("SELECT * FROM {n} LIMIT 20");'
-                      for n in model_names
-                  )
-                  panels = "\n      ".join(
-                      f'<div><h2>{n}</h2><pre>{{JSON.stringify({n}, null, 2)}}</pre></div>'
-                      for n in model_names
-                  )
-                  jsx = (
-                      'import { useSQLQuery } from "@motherduck/react-sql-query";\n'
-                      "export default function Dive() {\n"
-                      f"  {hooks}\n"
-                      "  return (\n"
-                      "    <div>\n"
-                      f"      {panels}\n"
-                      "    </div>\n"
-                      "  );\n"
-                      "}"
-                  )
+                  dive_title = f"CI build {db_name}"
+                  jsx = ci_database.build_dive_jsx(db_name, model_schemas)
                   # MD_CREATE_DIVE uses = named args (not :=); returns id for URL construction
                   row = con.execute(
                       "SELECT id, title FROM MD_CREATE_DIVE("
@@ -922,7 +897,7 @@ jobs:
                       "  content = ?,"
                       "  description = ?"
                       ")",
-                      [dive_title, jsx, f"CI build of {', '.join(model_names)}"]
+                      [dive_title, jsx, f"CI build of {', '.join(model_schemas.keys())}"]
                   ).fetchone()
                   if row:
                       dive_id, _t = row[0], row[1]

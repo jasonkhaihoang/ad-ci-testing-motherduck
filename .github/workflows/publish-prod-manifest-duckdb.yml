@@ -15,6 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=$([ -f .github/ci-config.yml ] && echo .github/ci-config.yml || echo ci-config.yml)" >> "$GITHUB_ENV"
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -27,12 +32,12 @@ jobs:
 
       - name: Parse dbt project
         run: |
-          dbt deps --quiet
-          dbt parse --profiles-dir .github/profiles --profile dbt_motherduck_compile --target compile --quiet
+          dbt deps --project-dir "$PROJ" --quiet
+          dbt parse --project-dir "$PROJ" --profiles-dir .github/profiles --profile dbt_motherduck_compile --target compile --quiet
 
       - name: Upload prod-manifest-duckdb artifact
         uses: actions/upload-artifact@v4
         with:
           name: prod-manifest-duckdb
-          path: target/manifest.json
+          path: ${{ env.PROJ }}/target/manifest.json
           retention-days: 90

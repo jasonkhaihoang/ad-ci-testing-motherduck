@@ -88,61 +88,64 @@ def databases_to_drop(
     return result
 
 
-_DIVE_TITLE_RE = re.compile(r"^CI build pr_(\d+)_[0-9a-f]+$")
+def _schema_from_relation_name(relation_name: str) -> str:
+    """Extract schema from a dbt relation_name like '"db"."stg"."model"'."""
+    if not relation_name:
+        return ""
+    parts = relation_name.replace('"', '').split('.')
+    return parts[1] if len(parts) == 3 else ""
 
 
-def derive_dive_title(pr_number: int, head_sha_short: str) -> str:
-    """Centralised Dive title: 'CI build pr_<N>_<sha>'. Shared by Gate 2 (create) and cleanup (match)."""
-    return f"CI build pr_{pr_number}_{head_sha_short}"
+def extract_model_schemas(run_results: dict | None) -> dict[str, str]:
+    """Extract {model_name: schema} from dbt run_results.json.
 
-
-def list_dives_sql() -> str:
-    """Render SELECT to list all Dives with their id and title."""
-    return "SELECT id, title FROM MD_LIST_DIVES();"
-
-
-def drop_dive_sql(dive_id: str) -> str:
-    """Render SELECT * FROM MD_DELETE_DIVE(id => '<dive_id>').
-
-    MD_DELETE_DIVE is a table function; it must be called in a FROM clause.
-    dive_id is sourced from MD_LIST_DIVES() and assumed to be a MotherDuck-controlled
-    UUID (alphanumeric + dashes) — no shell-sensitive characters are expected.
+    Reads the top-level relation_name field (e.g. '"db"."stg"."model"') to get
+    the actual rendered schema. Falls back to node.schema, then to 'main'.
+    node.schema holds the profile-level default, not the custom schema override.
     """
-    return f"SELECT * FROM MD_DELETE_DIVE(id => '{dive_id}');"
-
-
-def filter_pr_dives(all_dives: Iterable[dict]) -> list[dict]:
-    """Return only Dives whose title matches the CI build pr_<N>_<sha> convention."""
-    return [d for d in all_dives if _DIVE_TITLE_RE.match(d.get("title", ""))]
-
-
-def dives_to_drop(
-    pr_dives: Iterable[dict],
-    open_pr_numbers: Iterable,
-    closed_pr_number: int | None,
-) -> list[str]:
-    """Return Dive IDs to drop, mirroring databases_to_drop logic on Dive title+id.
-
-    - closed_pr_number given (PR-close): return IDs of every Dive for that PR.
-    - None (scheduled sweep): return IDs of Dives whose PR is not in open_pr_numbers.
-
-    Callers should pass output of filter_pr_dives — the inner title guard is defensive
-    and handles unfiltered input, but the canonical call site always pre-filters.
-    """
-    open_set = {int(n) for n in open_pr_numbers}
-    result: list[str] = []
-    for dive in pr_dives:
-        m = _DIVE_TITLE_RE.match(dive.get("title", ""))
-        if not m:
-            continue
-        pr_num = int(m.group(1))
-        if closed_pr_number is not None:
-            if pr_num == int(closed_pr_number):
-                result.append(dive["id"])
-        else:
-            if pr_num not in open_set:
-                result.append(dive["id"])
+    result: dict[str, str] = {}
+    for r in (run_results or {}).get("results", []):
+        node = r.get("node") or {}
+        name = node.get("name") or r.get("unique_id", "").split(".")[-1]
+        schema = (
+            _schema_from_relation_name(r.get("relation_name") or "")
+            or node.get("schema")
+            or "main"
+        )
+        if name:
+            result[name] = schema
     return result
+
+
+def build_dive_jsx(db_name: str, model_schemas: dict[str, str]) -> str:
+    """Build Dive JSX content with fully-qualified table references.
+
+    Generates useSQLQuery hooks as db_name.schema.model so the Dive resolves
+    correctly in any MotherDuck user session, not just the CI runner's.
+    Returns an empty string when model_schemas is empty (caller guards on this).
+    """
+    if not model_schemas:
+        return ""
+    hooks = "\n  ".join(
+        f'const {{ data: {name} }} = useSQLQuery('
+        f'"SELECT * FROM {db_name}.{schema}.{name} LIMIT 20");'
+        for name, schema in model_schemas.items()
+    )
+    panels = "\n      ".join(
+        f"<div><h2>{name}</h2><pre>{{JSON.stringify({name}, (_, v) => typeof v === 'bigint' ? v.toString() : v, 2)}}</pre></div>"
+        for name in model_schemas
+    )
+    return (
+        'import { useSQLQuery } from "@motherduck/react-sql-query";\n'
+        "export default function Dive() {\n"
+        f"  {hooks}\n"
+        "  return (\n"
+        "    <div>\n"
+        f"      {panels}\n"
+        "    </div>\n"
+        "  );\n"
+        "}"
+    )
 
 
 _E2E_SCENARIOS = ("greenfield", "incremental-modify", "incremental-staging")
@@ -177,3 +180,72 @@ def derive_e2e_db_name(scenario: str, run_id: str) -> str:
     scenario_safe = scenario.replace("-", "_")
     run_id_short = run_id.lower().replace("-", "")[:8]
     return f"pr_e2e_{scenario_safe}_{run_id_short}"
+
+
+_DIVE_TITLE_RE = re.compile(r"^CI build pr_(\d+)_[0-9a-f]+$")
+
+
+def derive_dive_title(pr_number: int, head_sha_short: str) -> str:
+    """Canonical Dive title: 'CI build pr_<N>_<sha>'. Used by cleanup (match); Gate 2 migration pending."""
+    return f"CI build pr_{pr_number}_{head_sha_short}"
+
+
+def list_dives_sql() -> str:
+    """Render SELECT to list all Dives with their id and title."""
+    return "SELECT id, title FROM MD_LIST_DIVES();"
+
+
+def drop_dive_sql(dive_id: str) -> str:
+    """Render SELECT * FROM MD_DELETE_DIVE(id = '<dive_id>'::UUID).
+
+    dive_id is sourced from MD_LIST_DIVES() and is a MotherDuck-controlled UUID.
+    The ::UUID cast is required by MD_DELETE_DIVE's parameter type.
+    """
+    return f"SELECT * FROM MD_DELETE_DIVE(id = '{dive_id}'::UUID);"
+
+
+def filter_pr_dives(all_dives: Iterable[dict]) -> list[dict]:
+    """Return only Dives whose title matches the CI build pr_<N>_<sha> convention."""
+    return [d for d in all_dives if _DIVE_TITLE_RE.match(d.get("title", ""))]
+
+
+def stale_pr_dives(
+    pr_dives: Iterable[dict],
+    stale_db_names: Iterable[str],
+) -> list[str]:
+    """Return Dive IDs whose title matches 'CI build <db_name>' for any name in stale_db_names.
+
+    Used by the synchronize cleanup path: for each stale database being dropped,
+    the Dive with the matching title is also dropped.
+    """
+    titles = {f"CI build {name}" for name in stale_db_names}
+    return [d["id"] for d in pr_dives if d.get("title") in titles]
+
+
+def dives_to_drop(
+    pr_dives: Iterable[dict],
+    open_pr_numbers: Iterable,
+    closed_pr_number: int | None,
+) -> list[str]:
+    """Return Dive IDs to drop on the PR-close or scheduled-sweep paths (AC-29).
+
+    - closed_pr_number given (PR-close): return IDs of every Dive for that PR.
+    - None (scheduled sweep): return IDs of Dives whose PR is not in open_pr_numbers.
+
+    Callers should pass output of filter_pr_dives — the inner title guard is defensive
+    and handles unfiltered input, but the canonical call site always pre-filters.
+    """
+    open_set = {int(n) for n in open_pr_numbers}
+    result: list[str] = []
+    for dive in pr_dives:
+        m = _DIVE_TITLE_RE.match(dive.get("title", ""))
+        if not m:
+            continue
+        pr_num = int(m.group(1))
+        if closed_pr_number is not None:
+            if pr_num == int(closed_pr_number):
+                result.append(dive["id"])
+        else:
+            if pr_num not in open_set:
+                result.append(dive["id"])
+    return result

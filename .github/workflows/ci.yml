@@ -35,9 +35,15 @@ jobs:
       intent_slug: ${{ steps.preflight.outputs.intent_slug }}
     steps:
       - uses: actions/checkout@v4
+        if: vars.FAKE_WORLD == ''
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=$([ -f .github/ci-config.yml ] && echo .github/ci-config.yml || echo ci-config.yml)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -96,7 +102,7 @@ jobs:
             --branch-name "${{ github.head_ref }}" \
             --behind-by "${{ steps.sync.outputs.behind_by || '0' }}" \
             --conflict-files "${{ steps.sync.outputs.conflict_files }}" \
-            --ci-config-path "ci-config.yml" \
+            --ci-config-path "$CICFG" \
             --output reports/preflight.json \
             --github-output "$GITHUB_OUTPUT"
 
@@ -172,6 +178,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=$([ -f .github/ci-config.yml ] && echo .github/ci-config.yml || echo ci-config.yml)" >> "$GITHUB_ENV"
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -181,7 +192,11 @@ jobs:
           DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install ruff sqlfluff pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
-          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz \
+          case "$(uname -m)" in
+            arm64|aarch64) GITLEAKS_ARCH=linux_arm64 ;;
+            *)              GITLEAKS_ARCH=linux_x64 ;;
+          esac
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_${GITLEAKS_ARCH}.tar.gz" \
             | tar xz -C /usr/local/bin gitleaks
 
       - run: mkdir -p reports
@@ -212,7 +227,7 @@ jobs:
 
       - name: sqlfluff
         continue-on-error: true
-        run: sqlfluff lint models/ --dialect duckdb --format json > reports/sqlfluff.json 2>/dev/null
+        run: sqlfluff lint "$PROJ/models" --dialect duckdb --format json > reports/sqlfluff.json 2>/dev/null
 
       - name: gitleaks
         continue-on-error: true
@@ -226,14 +241,15 @@ jobs:
       - name: dbt scorecard
         continue-on-error: true
         run: |
-          dbt deps --quiet 2>/dev/null || true
+          dbt deps --project-dir "$PROJ" --quiet 2>/dev/null || true
           dbt compile \
+            --project-dir "$PROJ" \
             --profiles-dir .github/profiles \
             --profile dbt_motherduck_compile \
             --target compile \
             --exclude package:elementary --quiet 2>/dev/null || true
           python3 ${{ env.SCRIPTS }}/scorecard.py \
-            --manifest target/manifest.json \
+            --manifest "$PROJ/target/manifest.json" \
             --agents-md AGENTS.md \
             > reports/scorecard.json
 
@@ -254,7 +270,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 ${{ env.SCRIPTS }}/schema_gate.py \
-            --manifest target/manifest.json \
+            --manifest "$PROJ/target/manifest.json" \
             --repo "${{ github.repository }}" \
             --base-sha "${{ github.event.pull_request.base.sha }}" \
             --head-sha "${{ github.event.pull_request.head.sha }}" \
@@ -403,6 +419,12 @@ jobs:
       platform_error_reason: ${{ steps.fetch.outputs.reason }}
     steps:
       - uses: actions/checkout@v4
+        if: vars.FAKE_WORLD == ''
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=$([ -f .github/ci-config.yml ] && echo .github/ci-config.yml || echo ci-config.yml)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -444,8 +466,9 @@ jobs:
 
       - name: Parse dbt project
         run: |
-          dbt deps --quiet
+          dbt deps --project-dir "$PROJ" --quiet
           dbt parse \
+            --project-dir "$PROJ" \
             --profiles-dir .github/profiles \
             --profile dbt_motherduck_compile \
             --target compile \
@@ -462,6 +485,7 @@ jobs:
         if: always() && steps.fetch.outputs.greenfield_fallback != 'true' && hashFiles('prod-state/manifest.json') != ''
         run: |
           modified=$(dbt ls \
+                       --project-dir "$PROJ" \
                        --select state:modified+ \
                        --state prod-state \
                        --profiles-dir .github/profiles \
@@ -587,6 +611,12 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        if: vars.FAKE_WORLD == ''
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=$([ -f .github/ci-config.yml ] && echo .github/ci-config.yml || echo ci-config.yml)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -640,8 +670,9 @@ jobs:
 
       - name: Parse dbt project
         run: |
-          dbt deps --quiet
+          dbt deps --project-dir "$PROJ" --quiet
           dbt parse \
+            --project-dir "$PROJ" \
             --profiles-dir .github/profiles \
             --profile dbt_motherduck_compile \
             --target compile \
@@ -655,12 +686,14 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_API_URL: ${{ vars.LLM_API_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
         run: |
           python3 ${{ env.SCRIPTS }}/design_drift_runner.py \
             --pr-number  "${{ github.event.pull_request.number }}" \
             --head-sha   "${{ github.event.pull_request.head.sha }}" \
             --intent-id  "${{ needs.preflight.outputs.intent_slug }}" \
-            --manifest   "target/manifest.json" \
+            --manifest   "$PROJ/target/manifest.json" \
             --modified   "reports/modified.json"
 
       - name: Emit ci/design-drift final-status failure
@@ -687,14 +720,211 @@ jobs:
   # ─── GATE 2 — CI/RUN ──────────────────────────────────────────────────────────
   # Clones prd → pr_<N>_<sha>, runs dbt.
   # Reads model names from the deployment-manifest artifact emitted by Gate 1.
+  # ─── ORCHESTRATION ──────────────────────────────────────────────────────────
+  # Validates the optional `## Schedule` design-contract section in intent/<slug>/design.md.
+  # Platform-neutral: cron/DAG/selector resolution only — does not deploy schedules.
+  orchestration:
+    name: "ci/orchestration: schedule design contract"
+    needs: [preflight, design-drift]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        if: vars.FAKE_WORLD == ''
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=$([ -f .github/ci-config.yml ] && echo .github/ci-config.yml || echo ci-config.yml)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dbt-duckdb
+        run: |
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
+          pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
+
+      - name: Emit ci/orchestration pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/orchestration",
+              "pending",
+              "Gate: orchestration running",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
+      - name: Parse dbt project
+        run: |
+          dbt deps --project-dir "$PROJ" --quiet
+          dbt parse \
+            --project-dir "$PROJ" \
+            --profiles-dir .github/profiles \
+            --profile dbt_motherduck_compile \
+            --target compile \
+            --quiet
+
+      - name: Run orchestration gate
+        id: run-gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 ${{ env.SCRIPTS }}/orchestration_gate_runner.py \
+            --pr-number  "${{ github.event.pull_request.number }}" \
+            --head-sha   "${{ github.event.pull_request.head.sha }}" \
+            --intent-id  "${{ needs.preflight.outputs.intent_slug }}" \
+            --manifest   "$PROJ/target/manifest.json"
+
+      - name: Emit ci/orchestration final-status failure
+        if: failure() && steps.run-gate.conclusion != 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/orchestration",
+              "failure",
+              "Gate failed before runner started: see job logs",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
+  # ─── SEMANTIC-MODEL ───────────────────────────────────────────────────────────
+  # Validates the optional `## Semantic Model` design-contract section against the dbt
+  # MetricFlow objects in manifest.json. Static only — no live MetricFlow query runtime check.
+  semantic-model:
+    name: "ci/semantic-model: dbt MetricFlow design contract"
+    needs: [preflight, design-drift]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        if: vars.FAKE_WORLD == ''
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=$([ -f .github/ci-config.yml ] && echo .github/ci-config.yml || echo ci-config.yml)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dbt-duckdb
+        run: |
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
+          pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
+
+      - name: Emit ci/semantic-model pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/semantic-model",
+              "pending",
+              "Gate: semantic-model running",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
+      - name: Parse dbt project
+        run: |
+          dbt deps --project-dir "$PROJ" --quiet
+          dbt parse \
+            --project-dir "$PROJ" \
+            --profiles-dir .github/profiles \
+            --profile dbt_motherduck_compile \
+            --target compile \
+            --quiet
+
+      - name: Run semantic-model gate
+        id: run-gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 ${{ env.SCRIPTS }}/semantic_model_gate_runner.py \
+            --pr-number  "${{ github.event.pull_request.number }}" \
+            --head-sha   "${{ github.event.pull_request.head.sha }}" \
+            --intent-id  "${{ needs.preflight.outputs.intent_slug }}" \
+            --manifest   "$PROJ/target/manifest.json"
+
+      - name: Emit ci/semantic-model final-status failure
+        if: failure() && steps.run-gate.conclusion != 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/semantic-model",
+              "failure",
+              "Gate failed before runner started: see job logs",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
   gate-2-run:
     name: "ci/run: MotherDuck dbt build"
-    needs: [fetch-prod-state, design-drift]
+    needs: [fetch-prod-state, design-drift, orchestration, semantic-model]
     runs-on: ubuntu-latest
     env:
       MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=$([ -f .github/ci-config.yml ] && echo .github/ci-config.yml || echo ci-config.yml)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -828,11 +1058,12 @@ jobs:
                   f.write(select_arg)
           EOF
 
-          dbt deps --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
+          dbt deps --project-dir "$PROJ" --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
 
           SELECT=$(cat reports/gate2_select.txt)
           if [ -n "$SELECT" ]; then
             dbt run \
+              --project-dir "$PROJ" \
               --select $SELECT \
               --profiles-dir .github/profiles \
               --profile dbt_motherduck_ci \
@@ -854,7 +1085,7 @@ jobs:
           python3 - <<'EOF'
           import json, os, sys
           sys.path.insert(0, ".github/scripts")
-          import gate_2_result, ci_database
+          import ci_database, gate_2_result
 
           head_sha = os.environ["HEAD_SHA"]
           db_created = os.environ.get("DB_CREATED", "false").lower() == "true"
@@ -862,7 +1093,7 @@ jobs:
 
           run_results = None
           try:
-              with open("target/run_results.json") as f:
+              with open(f"{os.environ.get('PROJ', '.')}/target/run_results.json") as f:
                   run_results = json.load(f)
           except (OSError, json.JSONDecodeError):
               pass
@@ -880,41 +1111,14 @@ jobs:
 
           # AC-10: call MD_CREATE_DIVE when the DB was created and models were built
           dive_url = None
-          raw_results = (run_results or {}).get("results") or []
-          model_names = [
-              (r.get("node") or {}).get("name") or r.get("unique_id", "").split(".")[-1]
-              for r in raw_results
-          ]
-          model_names = [n for n in model_names if n]
-          if db_created and db_name and model_names:
+          model_schemas = ci_database.extract_model_schemas(run_results)
+          if db_created and db_name and model_schemas:
               try:
                   import duckdb, urllib.parse
                   token = os.environ["MOTHERDUCK_TOKEN"]
                   con = duckdb.connect(f"md:{db_name}?motherduck_token={token}")
-                  # Use centralised title so cleanup matches by the same convention (AC-29)
-                  dive_title = ci_database.derive_dive_title(
-                      int(os.environ["PR_NUMBER"]), os.environ["HEAD_SHA_SHORT"][:7]
-                  )
-                  # JSX content: one useSQLQuery panel per model
-                  hooks = "\n  ".join(
-                      f'const {{ data: {n} }} = useSQLQuery("SELECT * FROM {n} LIMIT 20");'
-                      for n in model_names
-                  )
-                  panels = "\n      ".join(
-                      f'<div><h2>{n}</h2><pre>{{JSON.stringify({n}, null, 2)}}</pre></div>'
-                      for n in model_names
-                  )
-                  jsx = (
-                      'import { useSQLQuery } from "@motherduck/react-sql-query";\n'
-                      "export default function Dive() {\n"
-                      f"  {hooks}\n"
-                      "  return (\n"
-                      "    <div>\n"
-                      f"      {panels}\n"
-                      "    </div>\n"
-                      "  );\n"
-                      "}"
-                  )
+                  dive_title = f"CI build {db_name}"
+                  jsx = ci_database.build_dive_jsx(db_name, model_schemas)
                   # MD_CREATE_DIVE uses = named args (not :=); returns id for URL construction
                   row = con.execute(
                       "SELECT id, title FROM MD_CREATE_DIVE("
@@ -922,7 +1126,7 @@ jobs:
                       "  content = ?,"
                       "  description = ?"
                       ")",
-                      [dive_title, jsx, f"CI build of {', '.join(model_names)}"]
+                      [dive_title, jsx, f"CI build of {', '.join(model_schemas.keys())}"]
                   ).fetchone()
                   if row:
                       dive_id, _t = row[0], row[1]
@@ -1018,6 +1222,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=$([ -f .github/ci-config.yml ] && echo .github/ci-config.yml || echo ci-config.yml)" >> "$GITHUB_ENV"
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -1057,7 +1266,7 @@ jobs:
           path: reports/
 
       - name: Install dbt packages
-        run: dbt deps --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
+        run: dbt deps --project-dir "$PROJ" --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
 
       - name: Run dbt unit tests
         env:
@@ -1088,6 +1297,7 @@ jobs:
           select_arg = ",".join(names) + ",test_type:unit"
           subprocess.run([
               "dbt", "test",
+              "--project-dir", os.environ.get("PROJ", "."),
               "--select", select_arg,
               "--profiles-dir", ".github/profiles",
               "--profile", "dbt_motherduck_ci",
@@ -1098,7 +1308,7 @@ jobs:
           # parse_run_results.py writes gate-3.json and exits 0 (pass) or 1 (fail).
           rc = subprocess.run([
               "python3", ".github/scripts/parse_run_results.py",
-              "--input", "target/run_results.json",
+              "--input", f"{os.environ.get('PROJ', '.')}/target/run_results.json",
               "--output", "reports/gate-3.json",
           ]).returncode
 
@@ -1199,6 +1409,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=$([ -f .github/ci-config.yml ] && echo .github/ci-config.yml || echo ci-config.yml)" >> "$GITHUB_ENV"
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -1233,9 +1448,9 @@ jobs:
             --head-sha "${{ github.event.pull_request.head.sha }}" \
             --head-sha-short "${{ steps.sha.outputs.short }}" \
             --deployment-manifest "reports/deployment-manifest-${{ github.event.pull_request.head.sha }}.json" \
-            --dbt-project "dbt_project.yml" \
+            --dbt-project "$PROJ/dbt_project.yml" \
             --profiles-dir ".github/profiles" \
-            --run-results "target/run_results.json" \
+            --run-results "$PROJ/target/run_results.json" \
             --output "reports/gate-4.json"
 
       - name: Upload Gate 4 report

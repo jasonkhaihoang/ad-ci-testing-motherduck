@@ -60,18 +60,20 @@ def main() -> None:
         )
 
         for name in drop_list:
-            sql = ci_database.drop_database_sql(name)
-            print(f"  -> {sql}", flush=True)
-            try:
-                con.execute(sql)
-            except Exception as exc:  # best-effort: log and continue
-                print(f"     FAILED: {exc}", file=sys.stderr, flush=True)
-                failures.append((name, str(exc)))
-
+            # VD-3477: share must drop before its database — MotherDuck refuses
+            # DROP DATABASE while a share still references it.
             share_sql = ci_database.drop_share_sql(name)
             print(f"  -> {share_sql}", flush=True)
             try:
                 con.execute(share_sql)
+            except Exception as exc:  # best-effort: log and continue
+                print(f"     FAILED: {exc}", file=sys.stderr, flush=True)
+                failures.append((name, str(exc)))
+
+            sql = ci_database.drop_database_sql(name)
+            print(f"  -> {sql}", flush=True)
+            try:
+                con.execute(sql)
             except Exception as exc:  # best-effort: log and continue
                 print(f"     FAILED: {exc}", file=sys.stderr, flush=True)
                 failures.append((name, str(exc)))
@@ -119,18 +121,20 @@ def main() -> None:
         )
 
         for name in drop_list:
-            sql = ci_database.drop_database_sql(name)
-            print(f"  -> {sql}", flush=True)
-            try:
-                con.execute(sql)
-            except Exception as exc:  # best-effort: log and continue
-                print(f"     FAILED: {exc}", file=sys.stderr, flush=True)
-                failures.append((name, str(exc)))
-
+            # VD-3477: share must drop before its database — MotherDuck refuses
+            # DROP DATABASE while a share still references it.
             share_sql = ci_database.drop_share_sql(name)
             print(f"  -> {share_sql}", flush=True)
             try:
                 con.execute(share_sql)
+            except Exception as exc:  # best-effort: log and continue
+                print(f"     FAILED: {exc}", file=sys.stderr, flush=True)
+                failures.append((name, str(exc)))
+
+            sql = ci_database.drop_database_sql(name)
+            print(f"  -> {sql}", flush=True)
+            try:
+                con.execute(sql)
             except Exception as exc:  # best-effort: log and continue
                 print(f"     FAILED: {exc}", file=sys.stderr, flush=True)
                 failures.append((name, str(exc)))

@@ -46,6 +46,7 @@ def assemble(
     manifest_materializations: dict[str, str] | None = None,
     dive_url: str | None = None,
     db_name: str | None = None,
+    share_creation_failed: bool = False,
 ) -> dict:
     """Return the gate-2 result dict for render_gate_2_comment().
 
@@ -57,6 +58,9 @@ def assemble(
         manifest_materializations: Optional {model_name: materialization} fallback.
         dive_url: MotherDuck Dive URL from MD_CREATE_DIVE SQL (shell-supplied, I/O done).
         db_name: Per-PR database name (e.g. pr_42_abc1234) used to build local_dbt_snippet.
+        share_creation_failed: True if the CREATE SHARE call (VD-3321) failed after the
+            Dive was created — surfaced as a non-blocking warning (VD-3330), never as a
+            gate failure.
     """
     if error is not None:
         return {
@@ -89,9 +93,28 @@ def assemble(
     if db_created and build_models:
         if dive_url is not None:
             result["dive_url"] = dive_url
+            # VD-3330: surface a non-blocking warning when the per-PR database's
+            # read-only share (VD-3321) failed to create — never affects
+            # overall_status. Gated on dive_url (not just db_created/build_models)
+            # so this key never appears without the Dive link it qualifies.
+            if share_creation_failed:
+                result["share_creation_failed"] = True
         model_names = [m["name"] for m in build_models]
         result["local_dbt_snippet"] = (
             _build_local_dbt_snippet(db_name, model_names) if db_name else None
         )
 
     return result
+
+
+def decide_commit_status(result: dict | None) -> tuple[str, str]:
+    """Map an assembled gate-2 result to a GitHub commit-status (state, description).
+
+    Fails closed: anything other than a well-formed result with
+    overall_status == "pass" reports failure — including a missing/malformed
+    result, which happens if the job crashed before assemble() ran. The
+    ci/run status must never default to success on silence (VD-3322).
+    """
+    if isinstance(result, dict) and result.get("overall_status") == "pass":
+        return "success", "Gate 2: dbt build passed"
+    return "failure", "Gate 2: dbt build failed — see PR comment"

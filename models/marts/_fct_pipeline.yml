@@ -600,6 +600,23 @@ unit_tests:
             is_won: false
             last_modified_date: 2026-04-02 10:00:00
             system_modified_timestamp: 2026-04-02 10:00:00
+          - opportunity_id: OPP007B
+            account_id: ACC007
+            owner_id: USR007
+            opportunity_name: Decoy Non-Null Amount
+            stage_name: Prospecting
+            opportunity_type: New Business
+            lead_source: Referral
+            amount: 100
+            probability: 50
+            expected_revenue: 50
+            created_date: 2026-03-20 10:00:00
+            close_date: 2026-08-01
+            last_stage_change_date: 2026-03-20
+            is_closed: false
+            is_won: false
+            last_modified_date: 2026-04-02 10:00:00
+            system_modified_timestamp: 2026-04-02 10:00:00
       - input: ref('dim_account')
         rows:
           - account_id: ACC007
@@ -631,6 +648,11 @@ unit_tests:
           weighted_amount: null
           is_orphaned_opportunity: false
           is_zero_value: true
+        - opportunity_id: OPP007B
+          forecast_category: Commit
+          weighted_amount: 50.0
+          is_orphaned_opportunity: false
+          is_zero_value: false
 
   - name: test_fct_pipeline_open_opportunity_null_close_date
     description: >
@@ -657,6 +679,23 @@ unit_tests:
             is_won: false
             last_modified_date: 2026-04-08 11:00:00
             system_modified_timestamp: 2026-04-08 11:00:00
+          - opportunity_id: OPP008B
+            account_id: ACC008
+            owner_id: USR008
+            opportunity_name: Decoy Closed Deal
+            stage_name: Closed Won
+            opportunity_type: New Business
+            lead_source: Event
+            amount: 10000
+            probability: 100
+            expected_revenue: 10000
+            created_date: 2026-04-01 10:00:00
+            close_date: 2026-04-11
+            last_stage_change_date: 2026-04-05
+            is_closed: true
+            is_won: true
+            last_modified_date: 2026-04-11 10:00:00
+            system_modified_timestamp: 2026-04-11 10:00:00
       - input: ref('dim_account')
         rows:
           - account_id: ACC008
@@ -687,6 +726,12 @@ unit_tests:
           close_date: null
           forecast_category: Pipeline
           sales_cycle_days: null
+          is_orphaned_opportunity: false
+          is_zero_value: false
+        - opportunity_id: OPP008B
+          close_date: 2026-04-11
+          forecast_category: Closed Won
+          sales_cycle_days: 10
           is_orphaned_opportunity: false
           is_zero_value: false
 
@@ -864,7 +909,17 @@ unit_tests:
             last_modified_date: 2026-04-01 12:00:00
             system_modified_timestamp: 2026-04-01 12:00:00
       - input: ref('dim_account')
-        rows: []
+        rows:
+          - account_id: ACC999
+            account_name: Unrelated Co
+            account_type: Customer
+            industry: Other
+            billing_city: Somewhere
+            billing_state: SW
+            billing_country: USA
+            owner_id: USR999
+            created_date: 2026-01-01 00:00:00
+            last_modified_date: 2026-01-01 00:00:00
       - input: ref('dim_user')
         rows:
           - user_id: USR011

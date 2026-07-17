@@ -2,8 +2,9 @@
 
 gather → call → dispatch:
   1. Read design.md, manifest.json, modified.json from disk.
-  2. Read LLM_API_KEY from env.
-  3. Build prompt; POST to Claude API; receive structured JSON via tool-use.
+  2. Read LLM_API_KEY, LLM_API_URL, LLM_MODEL from env.
+  3. Build prompt; POST to OpenAI-compatible chat completions API; receive
+     structured JSON via tool-use.
   4. Call run_design_drift (pure).
   5. Post ci/design-drift status; sys.exit(1) on drift or error.
 
@@ -18,6 +19,8 @@ Usage:
 Environment:
     GITHUB_REPOSITORY, GH_TOKEN, GITHUB_RUN_ID, GITHUB_SERVER_URL  (status post)
     LLM_API_KEY                                                      (injected by workflow)
+    LLM_API_URL   base URL for OpenAI-compatible provider            (default: https://api.openai.com)
+    LLM_MODEL     model identifier                                   (default: gpt-4o)
 """
 from __future__ import annotations
 
@@ -35,36 +38,38 @@ import pr_comment
 from design_drift import build_llm_prompt, run_design_drift
 
 CONTEXT = "ci/design-drift"
-CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
-CLAUDE_MODEL = "claude-sonnet-4-6"
-CLAUDE_API_VERSION = "2023-06-01"
+DEFAULT_LLM_API_URL = "https://api.openai.com"
+DEFAULT_LLM_MODEL = "gpt-4o"
 MAX_OUTPUT_TOKENS = 4096
 
 _DRIFT_TOOL = {
-    "name": "report_design_drift",
-    "description": "Return drift findings comparing design.md against the modified dbt models.",
-    "input_schema": {
-        "type": "object",
-        "required": ["has_drift", "findings"],
-        "properties": {
-            "has_drift": {"type": "boolean"},
-            "findings": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": ["kind", "model", "detail"],
-                    "properties": {
-                        "kind": {
-                            "type": "string",
-                            "enum": [
-                                "missing_model", "extra_model",
-                                "grain_mismatch", "materialization_mismatch",
-                                "unique_key_mismatch",
-                                "unexpected_column", "missing_column",
-                            ],
+    "type": "function",
+    "function": {
+        "name": "report_design_drift",
+        "description": "Return drift findings comparing design.md against the modified dbt models.",
+        "parameters": {
+            "type": "object",
+            "required": ["has_drift", "findings"],
+            "properties": {
+                "has_drift": {"type": "boolean"},
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["kind", "model", "detail"],
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "missing_model", "extra_model",
+                                    "grain_mismatch", "materialization_mismatch",
+                                    "unique_key_mismatch",
+                                    "unexpected_column", "missing_column",
+                                ],
+                            },
+                            "model": {"type": "string"},
+                            "detail": {"type": "string"},
                         },
-                        "model": {"type": "string"},
-                        "detail": {"type": "string"},
                     },
                 },
             },
@@ -82,28 +87,36 @@ def _design_md_path(intent_id: str) -> str:
     return f"{intent_id}/design.md"
 
 
-def call_claude(api_key: str, prompt: str) -> dict:
+def call_llm(api_key: str, prompt: str, api_url: str, model: str) -> dict:
+    # Support both a base URL (https://api.openai.com) and a full endpoint URL
+    # (https://api.openai.com/v1/chat/completions) — append only when needed.
+    base = api_url.rstrip("/")
+    url = base if base.endswith("/v1/chat/completions") else f"{base}/v1/chat/completions"
     body = json.dumps({
-        "model": CLAUDE_MODEL,
+        "model": model,
         "max_tokens": MAX_OUTPUT_TOKENS,
         "temperature": 0,
         "tools": [_DRIFT_TOOL],
-        "tool_choice": {"type": "tool", "name": "report_design_drift"},
+        "tool_choice": {"type": "function", "function": {"name": "report_design_drift"}},
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
-    req = urllib.request.Request(CLAUDE_API_URL, data=body, method="POST")
-    req.add_header("x-api-key", api_key)
-    req.add_header("anthropic-version", CLAUDE_API_VERSION)
+    req = urllib.request.Request(url, data=body, method="POST")
+    req.add_header("Authorization", f"Bearer {api_key}")
     req.add_header("content-type", "application/json")
+    req.add_header("User-Agent", "python-httpx/0.27.0")
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             payload = json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Claude API HTTP {e.code}: {e.read().decode(errors='replace')}") from e
-    for block in payload.get("content", []):
-        if block.get("type") == "tool_use" and block.get("name") == "report_design_drift":
-            return block.get("input", {})
-    raise RuntimeError("Claude response did not include a report_design_drift tool_use block")
+        raise RuntimeError(f"LLM API HTTP {e.code}: {e.read().decode(errors='replace')}") from e
+    try:
+        tool_call = payload["choices"][0]["message"]["tool_calls"][0]
+        arguments = tool_call["function"]["arguments"]
+        return arguments if isinstance(arguments, dict) else json.loads(arguments)
+    except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
+        raise RuntimeError(
+            f"LLM response did not include a report_design_drift tool call: {payload}"
+        ) from e
 
 
 def _run_url() -> str:
@@ -150,8 +163,10 @@ def main(argv: list[str]) -> int:
         manifest = json.loads(_read_text(args.manifest))
         modified_names = json.loads(_read_text(args.modified))
         api_key = os.environ["LLM_API_KEY"]
+        api_url = os.environ.get("LLM_API_URL") or DEFAULT_LLM_API_URL
+        model = os.environ.get("LLM_MODEL") or DEFAULT_LLM_MODEL
         prompt = build_llm_prompt(design_text, manifest, modified_names)
-        llm_response = call_claude(api_key, prompt)
+        llm_response = call_llm(api_key, prompt, api_url, model)
     except Exception as e:  # gather/call failure → emit failure status, exit 1
         _post(args.head_sha, "failure", f"design-drift error: {type(e).__name__}: {e}")
         _post_pr_comment(args.pr_number, result=None)

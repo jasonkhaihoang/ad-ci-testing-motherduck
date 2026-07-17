@@ -33,11 +33,21 @@ jobs:
     outputs:
       domain: ${{ steps.preflight.outputs.domain }}
       intent_slug: ${{ steps.preflight.outputs.intent_slug }}
+      motherduck_token_var: ${{ steps.preflight.outputs.MOTHERDUCK_TOKEN_VAR }}
+      llm_api_key_var: ${{ steps.preflight.outputs.LLM_API_KEY_VAR }}
+      llm_api_url_var: ${{ steps.preflight.outputs.LLM_API_URL_VAR }}
+      llm_model_var: ${{ steps.preflight.outputs.LLM_MODEL_VAR }}
     steps:
       - uses: actions/checkout@v4
+        if: vars.FAKE_WORLD == ''
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=.workflow/ci-config.yml" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -96,7 +106,7 @@ jobs:
             --branch-name "${{ github.head_ref }}" \
             --behind-by "${{ steps.sync.outputs.behind_by || '0' }}" \
             --conflict-files "${{ steps.sync.outputs.conflict_files }}" \
-            --ci-config-path "ci-config.yml" \
+            --ci-config-path "$CICFG" \
             --output reports/preflight.json \
             --github-output "$GITHUB_OUTPUT"
 
@@ -172,6 +182,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=.workflow/ci-config.yml" >> "$GITHUB_ENV"
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -181,7 +196,11 @@ jobs:
           DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
             | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
           pip install ruff sqlfluff pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
-          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz \
+          case "$(uname -m)" in
+            arm64|aarch64) GITLEAKS_ARCH=linux_arm64 ;;
+            *)              GITLEAKS_ARCH=linux_x64 ;;
+          esac
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_${GITLEAKS_ARCH}.tar.gz" \
             | tar xz -C /usr/local/bin gitleaks
 
       - run: mkdir -p reports
@@ -212,7 +231,7 @@ jobs:
 
       - name: sqlfluff
         continue-on-error: true
-        run: sqlfluff lint models/ --dialect duckdb --format json > reports/sqlfluff.json 2>/dev/null
+        run: sqlfluff lint "$PROJ/models" --dialect duckdb --format json > reports/sqlfluff.json 2>/dev/null
 
       - name: gitleaks
         continue-on-error: true
@@ -226,14 +245,15 @@ jobs:
       - name: dbt scorecard
         continue-on-error: true
         run: |
-          dbt deps --quiet 2>/dev/null || true
+          dbt deps --project-dir "$PROJ" --quiet 2>/dev/null || true
           dbt compile \
+            --project-dir "$PROJ" \
             --profiles-dir .github/profiles \
             --profile dbt_motherduck_compile \
             --target compile \
             --exclude package:elementary --quiet 2>/dev/null || true
           python3 ${{ env.SCRIPTS }}/scorecard.py \
-            --manifest target/manifest.json \
+            --manifest "$PROJ/target/manifest.json" \
             --agents-md AGENTS.md \
             > reports/scorecard.json
 
@@ -254,7 +274,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 ${{ env.SCRIPTS }}/schema_gate.py \
-            --manifest target/manifest.json \
+            --manifest "$PROJ/target/manifest.json" \
             --repo "${{ github.repository }}" \
             --base-sha "${{ github.event.pull_request.base.sha }}" \
             --head-sha "${{ github.event.pull_request.head.sha }}" \
@@ -403,6 +423,12 @@ jobs:
       platform_error_reason: ${{ steps.fetch.outputs.reason }}
     steps:
       - uses: actions/checkout@v4
+        if: vars.FAKE_WORLD == ''
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=.workflow/ci-config.yml" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -444,8 +470,9 @@ jobs:
 
       - name: Parse dbt project
         run: |
-          dbt deps --quiet
+          dbt deps --project-dir "$PROJ" --quiet
           dbt parse \
+            --project-dir "$PROJ" \
             --profiles-dir .github/profiles \
             --profile dbt_motherduck_compile \
             --target compile \
@@ -462,6 +489,7 @@ jobs:
         if: always() && steps.fetch.outputs.greenfield_fallback != 'true' && hashFiles('prod-state/manifest.json') != ''
         run: |
           modified=$(dbt ls \
+                       --project-dir "$PROJ" \
                        --select state:modified+ \
                        --state prod-state \
                        --profiles-dir .github/profiles \
@@ -587,6 +615,12 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        if: vars.FAKE_WORLD == ''
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=.workflow/ci-config.yml" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -640,8 +674,9 @@ jobs:
 
       - name: Parse dbt project
         run: |
-          dbt deps --quiet
+          dbt deps --project-dir "$PROJ" --quiet
           dbt parse \
+            --project-dir "$PROJ" \
             --profiles-dir .github/profiles \
             --profile dbt_motherduck_compile \
             --target compile \
@@ -654,13 +689,15 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_RUN_ID: ${{ github.run_id }}
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_API_KEY: ${{ secrets[needs.preflight.outputs.llm_api_key_var] }}
+          LLM_API_URL: ${{ vars[needs.preflight.outputs.llm_api_url_var] }}
+          LLM_MODEL: ${{ vars[needs.preflight.outputs.llm_model_var] }}
         run: |
           python3 ${{ env.SCRIPTS }}/design_drift_runner.py \
             --pr-number  "${{ github.event.pull_request.number }}" \
             --head-sha   "${{ github.event.pull_request.head.sha }}" \
             --intent-id  "${{ needs.preflight.outputs.intent_slug }}" \
-            --manifest   "target/manifest.json" \
+            --manifest   "$PROJ/target/manifest.json" \
             --modified   "reports/modified.json"
 
       - name: Emit ci/design-drift final-status failure
@@ -687,14 +724,211 @@ jobs:
   # ─── GATE 2 — CI/RUN ──────────────────────────────────────────────────────────
   # Clones prd → pr_<N>_<sha>, runs dbt.
   # Reads model names from the deployment-manifest artifact emitted by Gate 1.
-  gate-2-run:
-    name: "ci/run: MotherDuck dbt build"
-    needs: [fetch-prod-state, design-drift]
+  # ─── ORCHESTRATION ──────────────────────────────────────────────────────────
+  # Validates the optional `## Schedule` design-contract section in intent/<slug>/design.md.
+  # Platform-neutral: cron/DAG/selector resolution only — does not deploy schedules.
+  orchestration:
+    name: "ci/orchestration: schedule design contract"
+    needs: [preflight, design-drift]
     runs-on: ubuntu-latest
-    env:
-      MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        if: vars.FAKE_WORLD == ''
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=.workflow/ci-config.yml" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dbt-duckdb
+        run: |
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
+          pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
+
+      - name: Emit ci/orchestration pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/orchestration",
+              "pending",
+              "Gate: orchestration running",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
+      - name: Parse dbt project
+        run: |
+          dbt deps --project-dir "$PROJ" --quiet
+          dbt parse \
+            --project-dir "$PROJ" \
+            --profiles-dir .github/profiles \
+            --profile dbt_motherduck_compile \
+            --target compile \
+            --quiet
+
+      - name: Run orchestration gate
+        id: run-gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 ${{ env.SCRIPTS }}/orchestration_gate_runner.py \
+            --pr-number  "${{ github.event.pull_request.number }}" \
+            --head-sha   "${{ github.event.pull_request.head.sha }}" \
+            --intent-id  "${{ needs.preflight.outputs.intent_slug }}" \
+            --manifest   "$PROJ/target/manifest.json"
+
+      - name: Emit ci/orchestration final-status failure
+        if: failure() && steps.run-gate.conclusion != 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/orchestration",
+              "failure",
+              "Gate failed before runner started: see job logs",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
+  # ─── SEMANTIC-MODEL ───────────────────────────────────────────────────────────
+  # Validates the optional `## Semantic Model` design-contract section against the dbt
+  # MetricFlow objects in manifest.json. Static only — no live MetricFlow query runtime check.
+  semantic-model:
+    name: "ci/semantic-model: dbt MetricFlow design contract"
+    needs: [preflight, design-drift]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        if: vars.FAKE_WORLD == ''
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=.workflow/ci-config.yml" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dbt-duckdb
+        run: |
+          DUCKDB_VERSION=$(curl -fsSL https://motherduck.com/docs/duckdb-versions.json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['duckdb']['motherduck_regions']['global']['max'])")
+          pip install pyyaml "dbt-core>=1.8" "dbt-duckdb" "duckdb==${DUCKDB_VERSION}" --quiet
+
+      - name: Emit ci/semantic-model pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/semantic-model",
+              "pending",
+              "Gate: semantic-model running",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
+      - name: Parse dbt project
+        run: |
+          dbt deps --project-dir "$PROJ" --quiet
+          dbt parse \
+            --project-dir "$PROJ" \
+            --profiles-dir .github/profiles \
+            --profile dbt_motherduck_compile \
+            --target compile \
+            --quiet
+
+      - name: Run semantic-model gate
+        id: run-gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 ${{ env.SCRIPTS }}/semantic_model_gate_runner.py \
+            --pr-number  "${{ github.event.pull_request.number }}" \
+            --head-sha   "${{ github.event.pull_request.head.sha }}" \
+            --intent-id  "${{ needs.preflight.outputs.intent_slug }}" \
+            --manifest   "$PROJ/target/manifest.json"
+
+      - name: Emit ci/semantic-model final-status failure
+        if: failure() && steps.run-gate.conclusion != 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/semantic-model",
+              "failure",
+              "Gate failed before runner started: see job logs",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
+  gate-2-run:
+    name: "ci/run: MotherDuck dbt build"
+    needs: [preflight, fetch-prod-state, design-drift, orchestration, semantic-model]
+    runs-on: ubuntu-latest
+    env:
+      MOTHERDUCK_TOKEN: ${{ secrets[needs.preflight.outputs.motherduck_token_var] }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=.workflow/ci-config.yml" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -739,32 +973,43 @@ jobs:
           HEAD_SHA_SHORT: ${{ github.event.pull_request.head.sha }}
         run: |
           python3 - <<'EOF'
-          import os, sys
+          import os, shutil, sys
           sys.path.insert(0, ".github/scripts")
           import ci_database, runner_io
 
           pr_number = int(os.environ["PR_NUMBER"])
           head_sha_short = os.environ["HEAD_SHA_SHORT"][:7]
-          token = os.environ["MOTHERDUCK_TOKEN"]
+          prod_db_name = "prd"
 
           db_name = ci_database.derive_ci_database_name(pr_number, head_sha_short)
-          prod_db_name = "prd"
-          sql = ci_database.create_database_from_prod_sql(db_name, prod_db_name)
 
-          import duckdb
-          con = duckdb.connect(f"md:?motherduck_token={token}")
-          try:
-              con.execute(sql)
-          except Exception as e:
-              if "retention" in str(e).lower():
-                  # Free-plan: prd has >0 snapshot retention which the plan can't inherit.
-                  # Reset prd to 0-day retention and retry. No-op on paid plans (CREATE
-                  # succeeds on the first try and this block is never reached).
-                  con.execute(ci_database.clear_db_retention_sql(prod_db_name))
+          fake_dir = os.environ.get("FAKE_WORLD_LOCAL_DUCKDB_DIR")
+          if fake_dir:
+              # ADR 0016: no HTTP boundary exists to front MotherDuck's md:
+              # wire protocol, so a real zero-copy clone is approximated with
+              # a plain file copy under the fake-world harness only.
+              shutil.copyfile(
+                  os.path.join(fake_dir, f"{prod_db_name}.duckdb"),
+                  os.path.join(fake_dir, f"{db_name}.duckdb"),
+              )
+          else:
+              token = os.environ["MOTHERDUCK_TOKEN"]
+              sql = ci_database.create_database_from_prod_sql(db_name, prod_db_name)
+
+              import duckdb
+              con = duckdb.connect(f"md:?motherduck_token={token}")
+              try:
                   con.execute(sql)
-              else:
-                  raise
-          con.close()
+              except Exception as e:
+                  if "retention" in str(e).lower():
+                      # Free-plan: prd has >0 snapshot retention which the plan can't inherit.
+                      # Reset prd to 0-day retention and retry. No-op on paid plans (CREATE
+                      # succeeds on the first try and this block is never reached).
+                      con.execute(ci_database.clear_db_retention_sql(prod_db_name))
+                      con.execute(sql)
+                  else:
+                      raise
+              con.close()
 
           runner_io.set_output("db_name", db_name)
           runner_io.set_output("head_sha_short", head_sha_short)
@@ -779,6 +1024,14 @@ jobs:
         run: |
           python3 - <<'EOF'
           import os, sys
+
+          if os.environ.get("FAKE_WORLD_LOCAL_DUCKDB_DIR"):
+              # ADR 0016: incidental cleanup, not part of AC-24 or the
+              # build-failure path — a fresh fake-world scratch dir never has
+              # stale databases to drop.
+              print("Skipping stale-database cleanup under the fake-world harness")
+              sys.exit(0)
+
           sys.path.insert(0, ".github/scripts")
           import ci_database, duckdb
 
@@ -798,6 +1051,13 @@ jobs:
                   con.execute(sql)
               except Exception as exc:
                   print(f"     WARNING: DROP failed (best-effort) — {exc}", file=sys.stderr, flush=True)
+
+              share_sql = ci_database.drop_share_sql(name)
+              print(f"  -> {share_sql}", flush=True)
+              try:
+                  con.execute(share_sql)
+              except Exception as exc:
+                  print(f"     WARNING: DROP SHARE failed (best-effort) — {exc}", file=sys.stderr, flush=True)
           con.close()
           EOF
 
@@ -828,11 +1088,17 @@ jobs:
                   f.write(select_arg)
           EOF
 
-          dbt deps --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
+          dbt deps --project-dir "$PROJ" --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
 
           SELECT=$(cat reports/gate2_select.txt)
           if [ -n "$SELECT" ]; then
+            # `|| true` deliberately swallows dbt's own exit code so the "Assemble
+            # gate-2 result" step below still runs and reads run_results.json even
+            # when dbt errors — that's what lets the PR comment show the actual
+            # per-model failure. The real pass/fail signal comes from
+            # gate_2_result.assemble's overall_status, not this step's exit code.
             dbt run \
+              --project-dir "$PROJ" \
               --select $SELECT \
               --profiles-dir .github/profiles \
               --profile dbt_motherduck_ci \
@@ -854,7 +1120,7 @@ jobs:
           python3 - <<'EOF'
           import json, os, sys
           sys.path.insert(0, ".github/scripts")
-          import gate_2_result, ci_database
+          import ci_database, gate_2_result
 
           head_sha = os.environ["HEAD_SHA"]
           db_created = os.environ.get("DB_CREATED", "false").lower() == "true"
@@ -862,10 +1128,30 @@ jobs:
 
           run_results = None
           try:
-              with open("target/run_results.json") as f:
+              with open(f"{os.environ.get('PROJ', '.')}/target/run_results.json") as f:
                   run_results = json.load(f)
           except (OSError, json.JSONDecodeError):
               pass
+
+          # VD-3322: run_results is None both when no models were selected (legitimate
+          # pass) and when dbt crashed before writing run_results.json at all (compile
+          # error, profile misconfiguration — distinct from a per-model dbt ERROR status,
+          # which does produce run_results.json). Tell them apart via gate2_select.txt,
+          # already written by the dbt-run step above: non-empty means models WERE
+          # selected, so a missing run_results.json means the build crashed.
+          build_crash_error = None
+          if run_results is None:
+              try:
+                  with open("reports/gate2_select.txt") as f:
+                      select_content = f.read().strip()
+              except OSError:
+                  select_content = ""
+              if select_content:
+                  build_crash_error = (
+                      "dbt run did not produce run_results.json — the build likely "
+                      "crashed before completing (compile error, profile "
+                      "misconfiguration, etc.)"
+                  )
 
           manifest_materializations = {}
           try:
@@ -878,43 +1164,37 @@ jobs:
           except (OSError, json.JSONDecodeError):
               pass
 
-          # AC-10: call MD_CREATE_DIVE when the DB was created and models were built
+          # AC-10: create the Dive when the DB was created and models were built
           dive_url = None
-          raw_results = (run_results or {}).get("results") or []
-          model_names = [
-              (r.get("node") or {}).get("name") or r.get("unique_id", "").split(".")[-1]
-              for r in raw_results
-          ]
-          model_names = [n for n in model_names if n]
-          if db_created and db_name and model_names:
+          share_creation_failed = False
+          model_schemas = ci_database.extract_model_schemas(run_results)
+          if db_created and db_name and model_schemas:
               try:
                   import duckdb, urllib.parse
-                  token = os.environ["MOTHERDUCK_TOKEN"]
-                  con = duckdb.connect(f"md:{db_name}?motherduck_token={token}")
-                  # Use centralised title so cleanup matches by the same convention (AC-29)
-                  dive_title = ci_database.derive_dive_title(
-                      int(os.environ["PR_NUMBER"]), os.environ["HEAD_SHA_SHORT"][:7]
-                  )
-                  # JSX content: one useSQLQuery panel per model
-                  hooks = "\n  ".join(
-                      f'const {{ data: {n} }} = useSQLQuery("SELECT * FROM {n} LIMIT 20");'
-                      for n in model_names
-                  )
-                  panels = "\n      ".join(
-                      f'<div><h2>{n}</h2><pre>{{JSON.stringify({n}, null, 2)}}</pre></div>'
-                      for n in model_names
-                  )
-                  jsx = (
-                      'import { useSQLQuery } from "@motherduck/react-sql-query";\n'
-                      "export default function Dive() {\n"
-                      f"  {hooks}\n"
-                      "  return (\n"
-                      "    <div>\n"
-                      f"      {panels}\n"
-                      "    </div>\n"
-                      "  );\n"
-                      "}"
-                  )
+                  fake_dir = os.environ.get("FAKE_WORLD_LOCAL_DUCKDB_DIR")
+                  if fake_dir:
+                      con = duckdb.connect(os.path.join(fake_dir, f"{db_name}.duckdb"))
+                  else:
+                      token = os.environ["MOTHERDUCK_TOKEN"]
+                      con = duckdb.connect(f"md:{db_name}?motherduck_token={token}")
+
+                  # AC-10 extension (VD-3321): org-scoped read-only share so a PR author who
+                  # isn't the owning service account can view the Dive without manual ATTACH.
+                  # CREATE OR REPLACE SHARE returns the share's URL in its own result row — no
+                  # second lookup query needed.
+                  share_url = None
+                  try:
+                      share_row = con.execute(ci_database.create_share_sql(db_name)).fetchone()
+                      share_url = share_row[0] if share_row else None
+                  except Exception as _se:
+                      print(f"Warning: CREATE SHARE failed — {_se}", flush=True)
+                  # VD-3330: catches both a raised exception (share_url stays None above)
+                  # and a "succeeded but no usable URL" result row — either way the Dive
+                  # link below won't auto-attach for a non-owner viewer.
+                  share_creation_failed = share_url is None
+
+                  dive_title = f"CI build {db_name}"
+                  jsx = ci_database.build_dive_jsx(db_name, model_schemas, share_url=share_url)
                   # MD_CREATE_DIVE uses = named args (not :=); returns id for URL construction
                   row = con.execute(
                       "SELECT id, title FROM MD_CREATE_DIVE("
@@ -922,7 +1202,7 @@ jobs:
                       "  content = ?,"
                       "  description = ?"
                       ")",
-                      [dive_title, jsx, f"CI build of {', '.join(model_names)}"]
+                      [dive_title, jsx, f"CI build of {', '.join(model_schemas.keys())}"]
                   ).fetchone()
                   if row:
                       dive_id, _t = row[0], row[1]
@@ -933,7 +1213,7 @@ jobs:
               except Exception as _e:
                   print(f"Warning: MD_CREATE_DIVE failed — {_e}", flush=True)
 
-          result = gate_2_result.assemble(db_created, run_results, head_sha, manifest_materializations=manifest_materializations, dive_url=dive_url, db_name=db_name or None)
+          result = gate_2_result.assemble(db_created, run_results, head_sha, error=build_crash_error, manifest_materializations=manifest_materializations, dive_url=dive_url, db_name=db_name or None, share_creation_failed=share_creation_failed)
           os.makedirs("reports", exist_ok=True)
           with open("reports/gate-2.json", "w") as f:
               json.dump(result, f, indent=2)
@@ -941,6 +1221,11 @@ jobs:
           passed = result["overall_status"] == "pass"
           import runner_io
           runner_io.set_output("passed", "true" if passed else "false")
+          # VD-3322: fail the job outright when the build failed — job.status /
+          # needs.gate-2-run.result must reflect the real dbt outcome, not just
+          # "no step crashed". Post-comment and status-emission steps below both
+          # carry `if: always()`, so they still run after this exits non-zero.
+          sys.exit(0 if passed else 1)
           EOF
 
       - name: Post gate-2 comment
@@ -978,17 +1263,24 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          JOB_STATUS: ${{ job.status }}
         run: |
           python3 - <<'EOF'
-          import os, sys
+          import json, os, sys
           sys.path.insert(0, ".github/scripts")
-          import emit_status
+          import emit_status, gate_2_result
           run_url = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          if os.environ["JOB_STATUS"] == "success":
-              state, desc = "success", "Gate 2: dbt build passed"
-          else:
-              state, desc = "failure", "Gate 2: dbt build failed — see PR comment"
+
+          # VD-3322: derive from the already-computed gate-2 result, not the
+          # job's own GitHub Actions conclusion — that only reflects "did some
+          # step crash", which stayed 'success' even on a real dbt build failure.
+          result = None
+          try:
+              with open("reports/gate-2.json") as f:
+                  result = json.load(f)
+          except (OSError, json.JSONDecodeError):
+              pass
+
+          state, desc = gate_2_result.decide_commit_status(result)
           emit_status.emit_status(
               os.environ["GITHUB_REPOSITORY"],
               os.environ["CI_HEAD_SHA"],
@@ -1003,11 +1295,11 @@ jobs:
   # Runs in parallel with gate-4-data-test; both need gate-2-run only.
   gate-3-unit:
     name: "ci/unit-tests: dbt unit tests (MotherDuck)"
-    needs: [gate-2-run]
+    needs: [preflight, gate-2-run]
     runs-on: ubuntu-latest
     if: always() && needs.gate-2-run.result == 'success'
     env:
-      MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+      MOTHERDUCK_TOKEN: ${{ secrets[needs.preflight.outputs.motherduck_token_var] }}
 
     concurrency:
       group: ci-gate3-pr-${{ github.event.pull_request.number }}
@@ -1017,6 +1309,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=.workflow/ci-config.yml" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -1057,7 +1354,7 @@ jobs:
           path: reports/
 
       - name: Install dbt packages
-        run: dbt deps --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
+        run: dbt deps --project-dir "$PROJ" --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
 
       - name: Run dbt unit tests
         env:
@@ -1085,9 +1382,15 @@ jobs:
               print("Gate 3: no models in closure — skipping unit tests.")
               sys.exit(0)
 
-          select_arg = ",".join(names) + ",test_type:unit"
+          # Space separates union selectors: each "{n},test_type:unit" is the AND
+          # of that model with unit tests — mirrors gate3_fabric_runner.py's
+          # selector pattern. A single comma-joined string would instead
+          # intersect all names together, matching no node once names has 2+
+          # entries (VD-3329).
+          select_arg = " ".join(f"{n},test_type:unit" for n in names)
           subprocess.run([
               "dbt", "test",
+              "--project-dir", os.environ.get("PROJ", "."),
               "--select", select_arg,
               "--profiles-dir", ".github/profiles",
               "--profile", "dbt_motherduck_ci",
@@ -1098,7 +1401,7 @@ jobs:
           # parse_run_results.py writes gate-3.json and exits 0 (pass) or 1 (fail).
           rc = subprocess.run([
               "python3", ".github/scripts/parse_run_results.py",
-              "--input", "target/run_results.json",
+              "--input", f"{os.environ.get('PROJ', '.')}/target/run_results.json",
               "--output", "reports/gate-3.json",
           ]).returncode
 
@@ -1190,14 +1493,20 @@ jobs:
   # gate4_runner.py is a thin shell: env read → dbt subprocess → run_results parse → status post.
   gate-4-data-test:
     name: "ci/data-tests: dbt test --store-failures"
-    needs: [gate-2-run]
+    needs: [preflight, gate-2-run]
     runs-on: ubuntu-latest
+    if: always()
     permissions:
       contents: read
       statuses: write
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve layout
+        run: |
+          echo "PROJ=$([ -f transformation/dbt_project.yml ] && echo transformation || echo .)" >> "$GITHUB_ENV"
+          echo "CICFG=.workflow/ci-config.yml" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -1220,12 +1529,13 @@ jobs:
         run: echo "short=$(echo '${{ github.event.pull_request.head.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
       - name: Run Gate 4 (gate4_runner.py)
+        if: needs.gate-2-run.result == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
-          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          MOTHERDUCK_TOKEN: ${{ secrets[needs.preflight.outputs.motherduck_token_var] }}
         run: |
           mkdir -p reports
           python3 ${{ env.SCRIPTS }}/gate4_runner.py run-gate \
@@ -1233,9 +1543,9 @@ jobs:
             --head-sha "${{ github.event.pull_request.head.sha }}" \
             --head-sha-short "${{ steps.sha.outputs.short }}" \
             --deployment-manifest "reports/deployment-manifest-${{ github.event.pull_request.head.sha }}.json" \
-            --dbt-project "dbt_project.yml" \
+            --dbt-project "$PROJ/dbt_project.yml" \
             --profiles-dir ".github/profiles" \
-            --run-results "target/run_results.json" \
+            --run-results "$PROJ/target/run_results.json" \
             --output "reports/gate-4.json"
 
       - name: Upload Gate 4 report

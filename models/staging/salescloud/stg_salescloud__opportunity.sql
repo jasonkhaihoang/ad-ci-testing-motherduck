@@ -60,3 +60,4 @@ select * from renamed
 -- e2e-and-PR-comments validation bump
 
 -- VD-4221 validation bump
+-- VD-4221 round 2 (asset-replace check)

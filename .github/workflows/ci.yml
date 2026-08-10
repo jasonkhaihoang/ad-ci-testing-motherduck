@@ -1045,19 +1045,21 @@ jobs:
           stale = ci_database.stale_pr_databases(all_db_names, pr_number=pr_number, current_db_name=current_db_name)
           print(f"Stale databases to drop: {stale}", flush=True)
           for name in stale:
-              sql = ci_database.drop_database_sql(name)
-              print(f"  -> {sql}", flush=True)
-              try:
-                  con.execute(sql)
-              except Exception as exc:
-                  print(f"     WARNING: DROP failed (best-effort) — {exc}", file=sys.stderr, flush=True)
-
+              # VD-3477: share must drop before its database — MotherDuck refuses
+              # DROP DATABASE while a share still references it.
               share_sql = ci_database.drop_share_sql(name)
               print(f"  -> {share_sql}", flush=True)
               try:
                   con.execute(share_sql)
               except Exception as exc:
                   print(f"     WARNING: DROP SHARE failed (best-effort) — {exc}", file=sys.stderr, flush=True)
+
+              sql = ci_database.drop_database_sql(name)
+              print(f"  -> {sql}", flush=True)
+              try:
+                  con.execute(sql)
+              except Exception as exc:
+                  print(f"     WARNING: DROP failed (best-effort) — {exc}", file=sys.stderr, flush=True)
           con.close()
           EOF
 

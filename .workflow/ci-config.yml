@@ -1,30 +1,16 @@
-# Domain CI Configuration — MotherDuck platform
-#
-# This file is fully rendered by VD Studio at every Intent container spawn —
-# do not hand-edit or expect edits to persist across spawns.
-
-# Platform discriminator. Must be exactly "motherduck" for this bundle.
+# Durable domain CI configuration — seeded by Vibe Data Studio.
+# The VD_DOMAIN_* coordinate keys are Studio-owned and CONVERGE on every spawn;
+# the per-platform GHA Variable/Secret name-indirection keys (ADR-0018) are
+# seeded once and preserved thereafter (VD-3364 AC, ADR-0019).
 VD_DOMAIN_DATA_PLATFORM: motherduck
-
-# Short slug identifying this domain (kebab-case).
-VD_DOMAIN_SLUG: sales-pipeline
-
-# Production MotherDuck database name. Gates 0-1 render this into the manifest
-# via dbt_motherduck_compile (database: prd), so it must match the live prod database.
-VD_DOMAIN_MOTHERDUCK_DATABASE: prd
-
-# GHA Variable/Secret name indirection (ADR 0018). Values here are the *names*
-# Studio provisions as repo Variables/Secrets, not domain data.
-MOTHERDUCK_TOKEN_VAR: MOTHERDUCK_TOKEN
-LLM_API_KEY_VAR: LLM_API_KEY
-LLM_API_URL_VAR: LLM_API_URL
-LLM_MODEL_VAR: LLM_MODEL
-
-# MotherDuck service token: set MOTHERDUCK_TOKEN as a GitHub Actions secret
-# (Settings -> Secrets and variables -> Actions -> Secrets) -- not in this file.
-
-# Prod-state manifest artifact -- published by publish-prod-manifest-duckdb.yml on push to main.
+VD_DOMAIN_SLUG: motherduck-sa-jkh
+VD_DOMAIN_SCHEMA: main
+VD_DOMAIN_MOTHERDUCK_DATABASE: sa_prd
 VD_DOMAIN_PROD_MANIFEST_SOURCE:
   mode: artifact
   workflow: publish-prod-manifest-duckdb.yml
   artifact_name: prod-manifest-duckdb
+MOTHERDUCK_TOKEN_VAR: MOTHERDUCK_TOKEN
+LLM_API_KEY_VAR: LLM_API_KEY
+LLM_API_URL_VAR: LLM_API_URL
+LLM_MODEL_VAR: LLM_MODEL

@@ -167,7 +167,7 @@ _E2E_SCENARIOS = ("greenfield", "incremental-modify", "incremental-staging")
 
 
 def build_scenario_matrix(scenario: str) -> list[str]:
-    """Expand a `/test-ci-duckdb` scenario input into the list of scenarios to run.
+    """Expand a `/test-ci-motherduck` scenario input into the list of scenarios to run.
 
     "all" → every scenario; a single scenario → single-element list.
     Unknown scenario → ValueError.

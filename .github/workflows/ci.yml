@@ -1,6 +1,6 @@
 # MotherDuck CI — Gates 0, 1, design-drift, 2, 4 (static-check + state-modified+ + design-drift + ci/run + ci/data-tests).
 # Gate 3 (ci/unit-tests) is wired in VD-2162.
-# See docs/design/DuckDB/duckdb-motherduck-ci-workflow-design.md
+# See docs/design/MotherDuck/motherduck-ci-workflow-design.md
 name: CI (MotherDuck)
 
 on:
@@ -16,7 +16,6 @@ permissions:
   contents: read
   pull-requests: write
   statuses: write
-  actions: read    # gh run list / download for prod-manifest-duckdb artifact
 
 env:
   PYTHON_VERSION: "3.11"
@@ -172,6 +171,90 @@ jobs:
           )
           EOF
 
+  # ─── ADR NUMBERING ────────────────────────────────────────────────────────
+  # Standalone check: fails the PR if docs/adr/ has duplicate leading numbers, or
+  # any ADR-00NN citation under docs/** has no matching file. No `needs:` — this
+  # check is independent of preflight and every other gate.
+  adr-numbering:
+    name: "ci/adr-numbering: ADR number + reference check"
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - if: vars.FAKE_WORLD == ''
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+
+      - if: vars.FAKE_WORLD == ''
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Emit ci/adr-numbering pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/adr-numbering",
+              "pending",
+              "Checking ADR numbering + cross-references",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
+      - name: Run ADR numbering check
+        run: python3 ${{ env.SCRIPTS }}/adr_lint.py
+
+      - name: Emit ci/adr-numbering success
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/adr-numbering",
+              "success",
+              "No duplicate ADR numbers or dangling references",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
+      - name: Emit ci/adr-numbering failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'EOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import emit_status
+          emit_status.emit_status(
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["CI_HEAD_SHA"],
+              "ci/adr-numbering",
+              "failure",
+              "ADR numbering check failed — see job log",
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+          )
+          EOF
+
   # ─── STATIC ANALYSIS ──────────────────────────────────────────────────────────
   # Gate 0: ruff + sqlfluff + gitleaks + dbt compile + scorecard + schema gate.
   # dbt compile uses dbt_motherduck_compile (offline, in-memory DuckDB, database: prd).
@@ -227,7 +310,7 @@ jobs:
 
       - name: ruff
         continue-on-error: true
-        run: ruff check . --exclude .github --output-format json > reports/ruff.json 2>/dev/null
+        run: ruff check . --extend-exclude .github --output-format json > reports/ruff.json 2>/dev/null
 
       - name: sqlfluff
         continue-on-error: true
@@ -262,6 +345,7 @@ jobs:
         run: |
           python3 ${{ env.SCRIPTS }}/dbt_error_report.py reports/dbt_compile.json \
             compile \
+            --project-dir "$PROJ" \
             --profiles-dir .github/profiles \
             --profile dbt_motherduck_compile \
             --target compile \
@@ -410,7 +494,7 @@ jobs:
           EOF
 
   # ─── FETCH PROD STATE ─────────────────────────────────────────────────────────
-  # Gate 1: download prod-manifest-duckdb → dbt ls --state → emit deployment manifest.
+  # Gate 1: download prod-manifest-motherduck → dbt ls --state → emit deployment manifest.
   # dbt_motherduck_compile is offline; no MotherDuck live connection required here.
   fetch-prod-state:
     name: "ci/state-modified+: fetch prod state"
@@ -1063,7 +1147,7 @@ jobs:
           con.close()
           EOF
 
-      - name: dbt run — build closure against per-PR clone
+      - name: dbt deps/seed/run — build closure against per-PR clone
         id: dbt-run
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -1091,6 +1175,19 @@ jobs:
           EOF
 
           dbt deps --project-dir "$PROJ" --profiles-dir .github/profiles --profile dbt_motherduck_ci --quiet
+
+          # AC-78/AC-79: seed before build so a state:modified model's ref() to a
+          # dbt seed resolves. Unconditional — the deployment manifest lists only
+          # models, never seeds. Seed's exit code is captured but not enforced —
+          # mirrors the dbt deps call above (also unguarded); the real pass/fail
+          # signal comes from gate_2_result.assemble's overall_status, same as
+          # Fabric's approach in gate2_fabric_runner.py (a seed referenced by a
+          # model in this PR's closure surfaces there as a downstream build
+          # failure; a seed referenced only by something outside this PR's
+          # closure will not — the echo below exists purely so a human scanning
+          # the job log for "why didn't my seed load" has something to find).
+          dbt seed --project-dir "$PROJ" --profiles-dir .github/profiles --profile dbt_motherduck_ci --target ci --no-use-colors 2>&1 || SEED_RC=$?
+          echo "dbt seed exit code: ${SEED_RC:-0}"
 
           SELECT=$(cat reports/gate2_select.txt)
           if [ -n "$SELECT" ]; then
@@ -1422,30 +1519,6 @@ jobs:
           sys.exit(rc)
           PYEOF
 
-      - name: Post gate-3 comment
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          python3 - <<'PYEOF'
-          import json, os, sys
-          sys.path.insert(0, ".github/scripts")
-          from notify_render import render_gate_3_comment, GATE_3_MARKER
-          import pr_comment
-
-          try:
-              with open("reports/gate-3.json") as f:
-                  result = json.load(f)
-          except (OSError, json.JSONDecodeError):
-              result = None
-
-          body = render_gate_3_comment(result)
-          pr_comment.upsert(GATE_3_MARKER, body, os.environ["PR_NUMBER"], os.environ["GITHUB_REPOSITORY"])
-          PYEOF
-
       - name: Upload gate-3 reports
         uses: actions/upload-artifact@v4
         if: always()
@@ -1490,6 +1563,45 @@ jobs:
           )
           EOF
 
+  gate-3-unit-comment:
+    name: "gate-3-unit comment"
+    needs: [preflight, gate-2-run, gate-3-unit]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download gate-3 reports
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: gate-3-reports-pr${{ github.event.pull_request.number }}
+          path: reports/
+
+      - name: Post gate-3 comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          REAL_WORK_RESULT: ${{ needs.gate-3-unit.result }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          from notify_render import render_gate_3_comment, GATE_3_MARKER
+          from pr_comment import post_gate_comment
+
+          post_gate_comment(
+              "reports/gate-3.json",
+              render_gate_3_comment,
+              GATE_3_MARKER,
+              os.environ["PR_NUMBER"],
+              os.environ["GITHUB_REPOSITORY"],
+              real_work_result=os.environ["REAL_WORK_RESULT"],
+          )
+          PYEOF
+
   # ─── GATE 4 — CI/DATA-TESTS ───────────────────────────────────────────────────
   # `dbt test --store-failures` against the per-PR clone (md:pr_<N>_<sha>) created by Gate 2.
   # gate4_runner.py is a thin shell: env read → dbt subprocess → run_results parse → status post.
@@ -1497,7 +1609,7 @@ jobs:
     name: "ci/data-tests: dbt test --store-failures"
     needs: [preflight, gate-2-run]
     runs-on: ubuntu-latest
-    if: always()
+    if: always() && needs.gate-2-run.result == 'success'
     permissions:
       contents: read
       statuses: write
@@ -1531,7 +1643,6 @@ jobs:
         run: echo "short=$(echo '${{ github.event.pull_request.head.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
       - name: Run Gate 4 (gate4_runner.py)
-        if: needs.gate-2-run.result == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -1548,6 +1659,7 @@ jobs:
             --dbt-project "$PROJ/dbt_project.yml" \
             --profiles-dir ".github/profiles" \
             --run-results "$PROJ/target/run_results.json" \
+            --manifest "$PROJ/target/manifest.json" \
             --output "reports/gate-4.json"
 
       - name: Upload Gate 4 report
@@ -1559,30 +1671,41 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+  gate-4-data-test-comment:
+    name: "gate-4-data-test comment"
+    needs: [preflight, gate-2-run, gate-4-data-test]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download gate-4 report
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: gate-4-pr${{ github.event.pull_request.number }}
+          path: reports/
+
       - name: Post gate-4 comment
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          REAL_WORK_RESULT: ${{ needs.gate-4-data-test.result }}
         run: |
           python3 - <<'PYEOF'
-          import json, os, sys
+          import os, sys
           sys.path.insert(0, ".github/scripts")
-          import notify_render, pr_comment
+          import notify_render
+          from pr_comment import post_gate_comment
 
-          result = None
-          try:
-              with open("reports/gate-4.json") as f:
-                  result = json.load(f)
-          except (OSError, json.JSONDecodeError):
-              pass
-
-          body = notify_render.render_gate_4_comment(result)
-          pr_comment.upsert(
+          post_gate_comment(
+              "reports/gate-4.json",
+              notify_render.render_gate_4_comment,
               notify_render.GATE_4_MARKER,
-              body,
               os.environ["PR_NUMBER"],
               os.environ["GITHUB_REPOSITORY"],
+              real_work_result=os.environ["REAL_WORK_RESULT"],
           )
           PYEOF

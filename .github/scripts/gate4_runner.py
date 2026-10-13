@@ -11,6 +11,7 @@ Usage:
         --head-sha-short abc1234 \
         --deployment-manifest reports/deployment-manifest-abc123def456.json \
         --dbt-project dbt_project.yml \
+        --manifest target/manifest.json \
         --profiles-dir .github/profiles \
         --run-results target/run_results.json \
         --output reports/gate-4.json
@@ -34,6 +35,7 @@ except ImportError:
     yaml = None
 
 import emit_status
+import runner_io
 from parse_run_results import check_store_failures_config, enrich_tests_from_manifest, parse_data_test_results
 
 CONTEXT = "ci/data-tests"
@@ -107,7 +109,8 @@ def cmd_run_gate(args) -> int:
     }
 
     subprocess.run(
-        ["dbt", "deps", "--profiles-dir", args.profiles_dir, "--profile", PROFILE, "--quiet"],
+        ["dbt", "deps", "--project-dir", runner_io.project_dir(),
+         "--profiles-dir", args.profiles_dir, "--profile", PROFILE, "--quiet"],
         env=env,
         capture_output=True,
         text=True,
@@ -115,6 +118,7 @@ def cmd_run_gate(args) -> int:
 
     cmd = [
         "dbt", "test",
+        "--project-dir", runner_io.project_dir(),
         "--store-failures",
         "--profiles-dir", args.profiles_dir,
         "--profile", PROFILE,
@@ -175,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dbt-project", default="dbt_project.yml")
     p.add_argument("--profiles-dir", default=".github/profiles")
     p.add_argument("--run-results", default="target/run_results.json")
-    p.add_argument("--manifest", default="target/manifest.json")
+    p.add_argument("--manifest", default=runner_io.target_path("target/manifest.json"))
     p.add_argument("--output", default=None)
     args = parser.parse_args(argv)
     return {"run-gate": cmd_run_gate}[args.command](args)

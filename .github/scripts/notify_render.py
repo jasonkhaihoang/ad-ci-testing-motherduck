@@ -12,6 +12,7 @@ Public surface:
     render_scorecard(report)         — (passed, markdown)
     render_gate_0(compile, schema_gate) — (passed, markdown)
     render_gate_3(summary)           — (passed, markdown)
+    render_adr_numbering_comment(duplicates, dangling) — (markdown)
     toggle_gate_5_ack(body, *, ack_active) — toggle ack banner in existing Gate 5 body
 """
 
@@ -23,7 +24,6 @@ from typing import Any, Callable
 _RUNNER_PREFIX_RE = re.compile(r"^/home/runner/work/[^/]+/[^/]+/")
 
 
-FABRIC_WORKSPACE_URL = "https://app.fabric.microsoft.com/groups/{workspace_id}/list?experience=fabric-developer"
 COMMENT_MARKER = "<!-- ephemeral-workspace-ready -->"
 DETAILS_COMMENT_MARKER = "<!-- static-analysis-details -->"
 
@@ -130,6 +130,19 @@ def _section_sqlfluff(report) -> tuple[bool, str]:
         for fp, n in sorted(file_counts.items())
     )
     return False, _failed_section("SQLFluff", f"❌ {total} violation(s)", lines, "Per-file breakdown")
+
+
+_SQLFLUFF_STDERR_TAIL_LINES = 20
+
+
+def _section_sqlfluff_missing(stderr: str) -> str:
+    tail = "\n".join(stderr.strip().splitlines()[-_SQLFLUFF_STDERR_TAIL_LINES:])
+    return _failed_section(
+        "SQLFluff",
+        "❌ sqlfluff exited without writing a report",
+        f"```text\n{tail or '(sqlfluff wrote no error output)'}\n```",
+        f"sqlfluff error output (last {_SQLFLUFF_STDERR_TAIL_LINES} lines)",
+    )
 
 
 def _section_gitleaks(report) -> tuple[bool, str]:
@@ -356,6 +369,24 @@ def _render_shortcut_seeding(report: dict | None) -> str:
     return ""
 
 
+def _ephemeral_database_line(result: dict) -> str:
+    """Render the per-PR database name, or "" when the producer supplied none (AC-10).
+
+    The name is an **operator correlation handle only** — it ties a CI log line to a
+    MotherDuck object. No interactive surface hangs off it: the database is reachable by
+    the CI service account alone (AC-93), so a Dive link or local dbt snippet would point
+    somewhere no reader can go.
+
+    `db_name` is a MotherDuck-only key. This renderer is shared with the Fabric bundle,
+    whose Gate 2 emits no such key — an ephemeral Fabric *workspace* is a different
+    concept with a different lifecycle, and it must not borrow this wording. The
+    contract is enforced, not assumed: see the invariant in
+    tests/unit/domain_pr_review_approval/test_motherduck_no_share_or_dive.py.
+    """
+    db_name = result.get("db_name")
+    return f"\n_Ephemeral database: `{db_name}`_\n" if db_name else ""
+
+
 def render_gate_2(result: dict | None) -> str:
     if not result:
         return ""
@@ -365,11 +396,16 @@ def render_gate_2(result: dict | None) -> str:
     session_error = result.get("session_error")
     if overall == "error" or session_error:
         cause = session_error or result.get("error") or "Session error"
+        # AC-10: name the database here too when the crash happened after the clone —
+        # this is the path with a failure to investigate, so withholding the operator's
+        # correlation handle would be worst exactly where it is most needed.
+        db_line = _ephemeral_database_line(result)
         return (
             f"## Isolated Build (ci/run) ❌\n\n"
             f"**Session error** — Gate 2 could not run.\n\n"
             f"> {cause}\n\n"
             "Re-run the `ci/run` job to retry.\n"
+            f"{db_line}"
         )
 
     head_sha = result.get("head_sha", "")
@@ -435,28 +471,7 @@ def render_gate_2(result: dict | None) -> str:
             + "\n\n</details>\n"
         )
 
-    # AC-10: Developer surfaces (MotherDuck Dive + local dbt snippet)
-    dive_url = result.get("dive_url")
-    local_dbt_snippet = result.get("local_dbt_snippet")
-    if dive_url:
-        dive_line = (
-            f"🔍 **[Explore in MotherDuck Dive]({dive_url})** "
-            "— zero-setup data exploration, no token or install required.\n"
-        )
-        snippet_block = ""
-        if local_dbt_snippet:
-            snippet_block = f"\n🖥️ **Run dbt locally:**\n\n```bash\n{local_dbt_snippet}\n```\n"
-        share_warning = ""
-        if result.get("share_creation_failed"):
-            # VD-3330: share creation (VD-3321) failed after the Dive was created — the
-            # Dive link above still resolves for the CI service account but may not
-            # resolve for the PR author. Non-blocking: Gate 2's pass/fail is unaffected.
-            share_warning = (
-                "\n> ⚠️ **Advisory:** the read-only data share for this PR's database "
-                "failed to create. The Dive link above may not resolve for anyone other "
-                "than the CI service account. Gate signal is unaffected.\n"
-            )
-        sections.append(f"\n### Developer surfaces\n\n{dive_line}{snippet_block}{share_warning}")
+    sections.append(_ephemeral_database_line(result))
 
     return "".join(sections)
 
@@ -962,7 +977,6 @@ _PROVISION_STEP_LABELS: list[tuple[str, str]] = [
     ("upload-prod-state", "Upload prod-state to OneLake"),
     ("derive-shortcuts", "Derive shortcuts"),
     ("seed-shortcuts", "Seed shortcuts"),
-    ("generate-notebook", "Generate and deploy notebook"),
 ]
 
 
@@ -984,7 +998,6 @@ def _render_provision_steps_table(provision_steps: dict[str, str]) -> str:
 
 
 def render_workspace_comment(
-    workspace_id: str,
     workspace_name: str,
     head_branch: str,
     greenfield_fallback: bool = False,
@@ -992,15 +1005,13 @@ def render_workspace_comment(
     *,
     provision_failed: bool = False,
     provision_steps: dict[str, str] | None = None,
-    notebook_url: str = "",
 ) -> str:
-    ws_url = FABRIC_WORKSPACE_URL.format(workspace_id=workspace_id)
     if provision_failed:
         table = _render_provision_steps_table(provision_steps or {})
         return (
             f"{COMMENT_MARKER}\n"
             f"## Ephemeral Workspace Ready (ci/provision-workspace) ❌\n\n"
-            f"**Workspace:** [{workspace_name}]({ws_url})  "
+            f"**Workspace:** `{workspace_name}`  "
             f"**Branch:** `{head_branch}`\n\n"
             f"{table}\n\n"
             f"> ci/run, ci/unit-tests, ci/data-tests, and ci/data-diff cannot run until provisioning succeeds. Fix the failing step and push again."
@@ -1015,34 +1026,12 @@ def render_workspace_comment(
     seeding_section = _render_shortcut_seeding(shortcut_seeding)
     if seeding_section:
         seeding_section = "\n" + seeding_section
-    nb_link = f"\n**Notebook:** [Open in Fabric]({notebook_url})" if notebook_url else ""
-    if greenfield_fallback:
-        checklist = (
-            "- [ ] Open the workspace and run these notebook cells in order:\n"
-            "  1. **Run** — `dbt run --select state:modified+` (full build — no prod baseline to clone)\n"
-            "  2. **Unit Test** — `dbt test --select state:modified+,test_type:unit` (after Run — uses tables built in step 1)\n"
-            "  3. **Data Test** — `dbt test --select state:modified+ --store-failures`\n"
-            "- [ ] Note: `ci/data-diff` auto-passes in greenfield mode — no prod baseline to compare against\n"
-        )
-    else:
-        checklist = (
-            "- [ ] Open the workspace and run these notebook cells in order:\n"
-            "  1. **Clone** — shallow-clones prod tables into the ephemeral lakehouse\n"
-            "  2. **Run** — `dbt run --select state:modified+` (writes the modified set)\n"
-            "  3. **Unit Test** — `dbt test --select state:modified+,test_type:unit` (after Run — uses tables built in step 2)\n"
-            "  4. **Data Test** — `dbt test --select state:modified+ --store-failures`\n"
-            "- [ ] Note: `ci/data-diff` runs automatically in CI — no manual cell required\n"
-        )
     return f"""{COMMENT_MARKER}
-## Ephemeral Workspace Ready (ci/provision-workspace)
+## Ephemeral Workspace Provisioned (ci/provision)
 
-**Workspace:** [{workspace_name}]({ws_url})
-**Branch:** `{head_branch}`{nb_link}
+**Workspace:** `{workspace_name}`
+**Branch:** `{head_branch}`
 {greenfield_notice}
-### Developer Checklist
-{checklist}- [ ] Validate results meet the intent spec acceptance criteria
-- [ ] Mark PR ready for review
-
 > CI reports available as workflow artifacts.
 {seeding_section}"""
 
@@ -1050,20 +1039,18 @@ def render_workspace_comment(
 def render_provision_failed(
     *,
     workspace_name: str = "",
-    workspace_id: str = "",
     head_branch: str = "",
     run_url: str = "",
 ) -> str:
     """Render ci/provision-workspace failure comment when provisioning errored."""
-    ws_url = FABRIC_WORKSPACE_URL.format(workspace_id=workspace_id) if workspace_id else ""
-    ws_ref = f"[{workspace_name}]({ws_url})" if ws_url else workspace_name or "workspace"
+    ws_ref = f"`{workspace_name}`" if workspace_name else "workspace"
     link = f" [View CI run]({run_url})" if run_url else ""
     branch_line = f"\n**Branch:** `{head_branch}`" if head_branch else ""
     return (
         f"{COMMENT_MARKER}\n"
         f"## Ephemeral Workspace Ready (ci/provision-workspace) ❌\n\n"
         f"**Workspace:** {ws_ref}{branch_line}\n\n"
-        f"Workspace provisioning failed before the notebook could be created.{link}\n\n"
+        f"Workspace provisioning failed.{link}\n\n"
         f"**Likely causes:**\n"
         f"- Fabric capacity exhausted\n"
         f"- Fabric API transient error or rate-limit\n"
@@ -1081,8 +1068,6 @@ GATE_3_MARKER = "<!-- ci-unit-tests -->"
 GATE_4_MARKER = "<!-- ci-data-tests -->"
 GATE_5_MARKER = "<!-- ci-data-diff -->"
 PREFLIGHT_MARKER = "<!-- ci-preflight -->"
-ORCHESTRATION_MARKER = "<!-- ci-orchestration -->"
-SEMANTIC_MODEL_MARKER = "<!-- ci-semantic-model -->"
 
 
 def render_gate_0_comment(
@@ -1094,10 +1079,13 @@ def render_gate_0_comment(
     gitleaks=None,
     scorecard=None,
     shortcut_seeding=None,
+    sqlfluff_stderr: str | None = None,
     run_url: str = "",
 ) -> str:
     has_gate_0 = bool(compile_result or schema_gate)
-    has_tools = any(x is not None for x in [ruff, sqlfluff, gitleaks, scorecard, shortcut_seeding])
+    has_tools = sqlfluff_stderr is not None or any(
+        x is not None for x in [ruff, sqlfluff, gitleaks, scorecard, shortcut_seeding]
+    )
 
     if not has_gate_0 and not has_tools:
         return f"{GATE_0_MARKER}\n## Static Analysis (ci/static-check) ⚠️\n\n_No data available._\n"
@@ -1110,6 +1098,10 @@ def render_gate_0_comment(
     for tool_id in _STATIC_ANALYSIS_TOOL_IDS:
         value = tool_inputs[tool_id]
         if value is None:
+            if tool_id == "sqlfluff" and sqlfluff_stderr is not None:
+                tool_passed_flags.append(False)
+                tool_table_rows += f"| {_TOOL_RENDERERS[tool_id].name} | {_icon(False)} Report missing — see workflow logs |\n"
+                tool_parts.append(_section_sqlfluff_missing(sqlfluff_stderr))
             continue
         cfg = _TOOL_RENDERERS[tool_id]
         tool_passed, tool_section = cfg.section_fn(value)
@@ -1169,15 +1161,38 @@ def render_gate_1_comment(
         mode = platform_error.get("mode", "artifact")
         category = platform_error.get("category", "")
         reason = platform_error.get("reason", "")
+
+        # version_mismatch/provenance_missing (VD-5832) are not transport failures — the
+        # fetch succeeded, but the baseline fails a parity policy. "Re-run this job" is
+        # actively wrong advice here: a re-run reproduces the identical outcome, since
+        # nothing about the job's inputs changed. Each gets its own banner + remediation.
+        if category in ("version_mismatch", "provenance_missing"):
+            banner = (
+                "> ❌ **Version mismatch** — the baseline's recorded dbt/adapter version could not be installed.\n\n"
+                if category == "version_mismatch"
+                else "> ❌ **Baseline provenance missing** — the prod-state baseline predates dbt/adapter version recording and cannot be checked for parity.\n\n"
+            )
+            remediation = (
+                "ci/run, ci/unit-tests, ci/data-tests, and ci/data-diff did not run. Re-running this job will "
+                "reproduce the same failure. Republish the baseline instead: trigger `publish-prod-manifest.yml` "
+                "(`workflow_dispatch`) on `main` to publish a baseline with freshly recorded dbt/adapter "
+                "provenance, then push a new commit or re-run this job.\n"
+            )
+        else:
+            banner = "> ❌ **Platform error** — fetching prod state failed.\n\n"
+            remediation = (
+                "ci/run, ci/unit-tests, ci/data-tests, and ci/data-diff did not run. Re-run this job once the issue is "
+                "resolved, or push a new commit.\n"
+            )
+
         return (
             f"{GATE_1_MARKER}\n"
             f"{heading}\n\n"
-            f"> ❌ **Platform error** — fetching prod state failed.\n\n"
+            f"{banner}"
             f"- Mode: {mode}\n"
             f"- Category: {category}\n"
             f"- Reason: {reason}\n\n"
-            "ci/run, ci/unit-tests, ci/data-tests, and ci/data-diff did not run. Re-run this job once the issue is resolved, "
-            "or push a new commit.\n"
+            f"{remediation}"
         )
 
     if not passed and not closure:
@@ -1253,7 +1268,12 @@ def render_gate_2_comment(result, *, run_url: str = "") -> str:
 
 def render_gate_3_comment(result) -> str:
     if not result:
-        return f"{GATE_3_MARKER}\n## Unit Tests (ci/unit-tests) ⚠️\n\n_No data available._\n"
+        return (
+            f"{GATE_3_MARKER}\n"
+            "## Unit Tests (ci/unit-tests) ⏭️ Skipped\n\n"
+            "Isolated Build (ci/run) did not succeed — unit tests require built rows to run against.\n\n"
+            "Fix the ci/run failure and re-push to trigger ci/unit-tests.\n"
+        )
     _, section = render_gate_3(result)
     return f"{GATE_3_MARKER}\n{section}"
 
@@ -1261,6 +1281,10 @@ def render_gate_3_comment(result) -> str:
 def render_design_drift_comment(result: dict | None, modified_names: list[str] | None = None) -> str:
     if result is None:
         return f"{DESIGN_DRIFT_MARKER}\n## Design Drift (ci/design-drift) ⚠️\n\n_No data available._\n"
+
+    if result.get("skipped"):
+        return (f"{DESIGN_DRIFT_MARKER}\n## Design Drift (ci/design-drift) ⏭️ Skipped\n\n"
+                f"_no model design record changed — nothing to compare._\n")
 
     has_drift = result.get("has_drift", False)
     findings = result.get("findings") or []
@@ -1273,7 +1297,7 @@ def render_design_drift_comment(result: dict | None, modified_names: list[str] |
         section = (
             f"## Design Drift (ci/design-drift) ✅\n\n"
             f"{models_line}"
-            f"No drift detected — design.md matches the modified model set.\n"
+            f"No drift detected — the changed model design records match the modified model set.\n"
         )
     else:
         rows = "\n".join(
@@ -1288,42 +1312,6 @@ def render_design_drift_comment(result: dict | None, modified_names: list[str] |
         )
 
     return f"{DESIGN_DRIFT_MARKER}\n{section}"
-
-
-def render_contract_gate_comment(marker: str, title: str, context: str, result: dict | None) -> str:
-    """Render a C5 design-contract gate result ({skipped, findings:[{rule,severity,message}]}).
-
-    Reused by ci/orchestration and ci/semantic-model — the two design-contract gates
-    share the C5 protocol, so they share one renderer.
-    """
-    if result is None:
-        return f"{marker}\n## {title} ({context}) ⚠️\n\n_No data available._\n"
-
-    if result.get("skipped"):
-        return (
-            f"{marker}\n## {title} ({context}) ⏭️ Skipped\n\n"
-            f"No design-contract section declared in design.md — nothing to validate.\n"
-        )
-
-    findings = result.get("findings") or []
-    critical = [f for f in findings if f.get("severity") == "critical"]
-
-    if not critical:
-        body = f"{marker}\n## {title} ({context}) ✅\n\nDesign contract satisfied.\n"
-        advisory = [f for f in findings if f.get("severity") != "critical"]
-        if advisory:
-            lines = "\n".join(f"- `{f.get('rule', '')}` — {f.get('message', '')}" for f in advisory)
-            body += f"\n_Advisory:_\n{lines}\n"
-        return body
-
-    rows = "\n".join(
-        f"| {f.get('severity', '')} | {f.get('rule', '')} | {f.get('message', '')} |"
-        for f in findings
-    )
-    return (
-        f"{marker}\n## {title} ({context}) ❌\n\n"
-        f"| Severity | Rule | Detail |\n| --- | --- | --- |\n{rows}\n"
-    )
 
 
 def render_gate_4_comment(result) -> str:
@@ -1425,6 +1413,7 @@ def render_preflight_comment(result: dict | None) -> str:
     """Render the <!-- ci-preflight --> upserted PR comment section.
 
     Rows always shown: auto-rebase (informational), intent, ci-config.
+    Capacity row added when the report carries one (Fabric lanes, AC-105).
     Violation row added only when auto_merge_disabled check failed.
     """
     if not result:
@@ -1459,6 +1448,12 @@ def render_preflight_comment(result: dict | None) -> str:
             ci_detail = f"{ci_detail} — missing: {formatted}"
 
     rows.append(f"| ci-config | {ci_icon} | {ci_detail} |")
+
+    # Fabric lanes only (AC-105): absent on platforms with no capacity to check.
+    capacity = result.get("capacity")
+    if capacity:
+        capacity_icon = "✅" if capacity.get("passed") else "❌"
+        rows.append(f"| capacity | {capacity_icon} | {_sanitize_table_cell(capacity.get('message', ''))} |")
 
     # Violation row: only shown when auto-merge is enabled (failure case)
     am = result.get("auto_merge_disabled", {})
@@ -1574,3 +1569,36 @@ def render_details_comment(bundle: ReportBundle) -> str:
         parts.append(gate_4_section + "\n")
 
     return "".join(parts)
+
+
+ADR_NUMBERING_MARKER = "<!-- ci-adr-numbering -->"
+
+
+def render_adr_numbering_comment(duplicates: dict, dangling: list) -> str:
+    """AC-87: own marker, upserted every run. AC-88: findings under distinct
+    headings. AC-89: all-clear (including the no-ADR-files short-circuit,
+    which passes empty duplicates/dangling here same as a clean, populated run)."""
+    if not duplicates and not dangling:
+        return (
+            f"{ADR_NUMBERING_MARKER}\n## ADR Numbering (ci/adr-numbering) ✅\n\n"
+            f"No duplicate ADR numbers or dangling references.\n"
+        )
+
+    sections = []
+    if duplicates:
+        rows = "\n".join(
+            f"| {number} | {', '.join(sorted(files))} |"
+            for number, files in sorted(duplicates.items())
+        )
+        sections.append(
+            f"### Duplicate ADR numbers\n\n| Number | Files |\n| --- | --- |\n{rows}\n"
+        )
+    if dangling:
+        rows = "\n".join(
+            f"| {f['file']} | {f['line']} | ADR-{f['number']} |" for f in dangling
+        )
+        sections.append(
+            f"### Dangling references\n\n| File | Line | Missing |\n| --- | --- | --- |\n{rows}\n"
+        )
+
+    return f"{ADR_NUMBERING_MARKER}\n## ADR Numbering (ci/adr-numbering) ❌\n\n" + "\n".join(sections)

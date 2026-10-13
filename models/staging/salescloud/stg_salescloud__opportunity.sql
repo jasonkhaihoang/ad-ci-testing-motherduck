@@ -1,3 +1,4 @@
+-- ci-test marker: drift-fail 2026-10-13
 -- ci-test marker
 {{ config(materialized='view') }}
 

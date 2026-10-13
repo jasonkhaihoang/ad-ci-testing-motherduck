@@ -1,3 +1,4 @@
+-- ci-test marker: incremental-staging 2026-10-13
 -- ci-test marker
 {{ config(materialized='view') }}
 

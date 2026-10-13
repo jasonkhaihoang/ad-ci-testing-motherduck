@@ -6,6 +6,15 @@ and reusable without going through the CLI shell.
 import os
 import re
 
+from platform_enum import (
+    DUCKDB_LOCAL,
+    FABRIC_LAKEHOUSE,
+    FABRIC_WAREHOUSE,
+    MOTHERDUCK,
+    PLATFORMS,
+    VALID_PLATFORMS,
+)
+
 try:
     import yaml
 except ImportError:
@@ -13,7 +22,7 @@ except ImportError:
 
 
 def locate_ci_config(root: str = ".") -> str:
-    """Return the Studio-rendered ci-config.yml path: always .workflow/ci-config.yml."""
+    """Return the ci-config.yml path: always .workflow/ci-config.yml."""
     return ".workflow/ci-config.yml"
 
 
@@ -24,12 +33,27 @@ def locate_project_dir(root: str = ".") -> str:
 
 INTENT_SLUG_RE = re.compile(r"^intent/[a-z0-9][a-z0-9\-]+$")
 
+# The two `*_NAME` coordinates are deliberately absent: no workflow consumes them
+# (ci.yml re-exports them as preflight outputs that nothing reads downstream), and
+# both the /install-ci skill and the plugin's runtime-location-contract.json declare
+# them optional. Requiring them here failed an install that legitimately omitted them.
 _FABRIC_REQUIRED_KEYS = [
     "VD_DOMAIN_SLUG",
-    "VD_DOMAIN_FABRIC_WORKSPACE_ID",
-    "VD_DOMAIN_FABRIC_WORKSPACE_NAME",
+    "VD_DOMAIN_FABRIC_LAKEHOUSE_WORKSPACE_ID",
     "VD_DOMAIN_FABRIC_LAKEHOUSE_ID",
-    "VD_DOMAIN_FABRIC_LAKEHOUSE_NAME",
+]
+
+# A Warehouse's coordinates are warehouse-shaped, not lakehouse-shaped, and the NAME
+# is load-bearing rather than cosmetic: the Intent's bridge Lakehouse — and the CI
+# bridge that mirrors it — must carry the Domain Warehouse's name verbatim, because a
+# three-part TDS name records no workspace and only resolves against an item of
+# exactly that name. See docs/design/data-platform/platform-contract.md in vd-studio.
+_FABRIC_WAREHOUSE_REQUIRED_KEYS = [
+    "VD_DOMAIN_SLUG",
+    "VD_DOMAIN_FABRIC_WAREHOUSE_WORKSPACE_ID",
+    "VD_DOMAIN_FABRIC_WAREHOUSE_WORKSPACE_NAME",
+    "VD_DOMAIN_FABRIC_WAREHOUSE_ID",
+    "VD_DOMAIN_FABRIC_WAREHOUSE_NAME",
 ]
 
 _MOTHERDUCK_REQUIRED_KEYS = [
@@ -37,30 +61,88 @@ _MOTHERDUCK_REQUIRED_KEYS = [
     "VD_DOMAIN_MOTHERDUCK_DATABASE",
 ]
 
-# New (Studio-rendered) key -> legacy lowercase key every existing downstream
+# LocalDuck runs no CI against a target platform, so it has no credential/coordinate
+# keys to validate — just the domain slug every platform's config carries.
+_DUCKDB_LOCAL_REQUIRED_KEYS = [
+    "VD_DOMAIN_SLUG",
+]
+
+# Total over platform_enum.VALID_PLATFORMS — every member has its own entry, so a
+# future platform added to VALID_PLATFORMS without a matching entry here raises
+# (via the dict indexing below) instead of silently inheriting Fabric's keys.
+_REQUIRED_KEYS_BY_PLATFORM = {
+    FABRIC_LAKEHOUSE: _FABRIC_REQUIRED_KEYS,
+    FABRIC_WAREHOUSE: _FABRIC_WAREHOUSE_REQUIRED_KEYS,
+    MOTHERDUCK: _MOTHERDUCK_REQUIRED_KEYS,
+    DUCKDB_LOCAL: _DUCKDB_LOCAL_REQUIRED_KEYS,
+}
+
+# The ADR-0018 indirection block is validated permissively on purpose: an
+# unrecognised key passes through so an older repository does not break on a
+# stale one (AC-11 / VD-5013). No `*_VAR` key is required here — a mapping can
+# be present and correct while the Variable it names is unset, so requiring the
+# key would not catch the real failure anyway. Validating that a named Variable
+# actually resolves needs the workflow to pass `${{ vars[...] }}` in, which is a
+# separate change across the bundles.
+
+
+def _is_blank(value) -> bool:
+    """True when a declared key carries no usable value.
+
+    `KEY:` with nothing after it parses as None, and `KEY: ""` as the empty
+    string. Both satisfy a presence check while breaking every consumer, which
+    is the shape VD-5156 surfaced from the other direction.
+    """
+    return value is None or (isinstance(value, str) and value.strip() == "")
+
+
+def require_indirection_key(config: dict, key: str) -> dict:
+    """Return the GitHub Actions name a `*_VAR` indirection key holds, or an error naming the key.
+
+    Pure and deliberately not part of `parse_ci_config`'s validation: that stays permissive about
+    `*_VAR` keys (AC-11). Callers with no safe default name (the MotherDuck cleanup, AC-113) use
+    this to fail closed instead of falling back to a literal secret name.
+    """
+    value = config.get(key)
+    if not isinstance(value, str) or _is_blank(value):
+        return {"ok": False, "value": None, "error": f"ci-config.yml must set {key} to a GitHub Actions secret or variable name"}
+    return {"ok": True, "value": value.strip(), "error": None}
+
+
+# Committed coordinate key -> legacy lowercase key every existing downstream
 # consumer (preflight.py's GITHUB_OUTPUT writer, ci.yml's `outputs.*` refs,
 # fabric_api.py) already expects. VD_DOMAIN_SCHEMA has no entry here —
 # confirmed dead (VD-3440 AC-64), dropped rather than renamed.
 _KEY_ALIASES = {
     "VD_DOMAIN_DATA_PLATFORM": "platform",
     "VD_DOMAIN_SLUG": "domain",
-    "VD_DOMAIN_FABRIC_WORKSPACE_ID": "prod_workspace_id",
-    "VD_DOMAIN_FABRIC_WORKSPACE_NAME": "prod_workspace_name",
+    "VD_DOMAIN_FABRIC_LAKEHOUSE_WORKSPACE_ID": "prod_workspace_id",
+    "VD_DOMAIN_FABRIC_LAKEHOUSE_WORKSPACE_NAME": "prod_workspace_name",
     "VD_DOMAIN_FABRIC_LAKEHOUSE_ID": "prod_lakehouse_id",
     "VD_DOMAIN_FABRIC_LAKEHOUSE_NAME": "prod_lakehouse_name",
+    # No Warehouse entries, on purpose. The Warehouse preflight job reads its
+    # coordinates back under their own VD_DOMAIN_FABRIC_WAREHOUSE_* names (an
+    # untranslated key passes through to GITHUB_OUTPUT unchanged), and its publish
+    # workflow reads ci-config.yml directly, so no consumer needs a legacy name.
+    # A shared alias would also make `_translate_config_keys` lossy for a malformed
+    # config carrying both Fabric kinds' coordinates — two source keys mapping to
+    # one `prod_workspace_id` silently drops whichever comes first.
     "VD_DOMAIN_MOTHERDUCK_DATABASE": "prod_db_name",
     "VD_DOMAIN_CI_DBT_PROFILE": "ci_target",
     "VD_DOMAIN_CI_SPARK_COMPUTE": "spark_compute",
     "VD_DOMAIN_PROD_MANIFEST_SOURCE": "prod_manifest_source",
 }
 
-# duckdb-quack is handled below with a specific migration message before this check
-_VALID_PLATFORMS = {"fabric", "motherduck"}
+# duckdb-quack is handled below with a specific migration message before this check.
+# The accepted values are owned by platform_enum (AC-90) so every consumer that branches
+# on platform reads the same set — see docs/design/bundle-manifest-composition/README.md.
+_VALID_PLATFORMS = VALID_PLATFORMS
 
 
 def _translate_config_keys(config: dict) -> dict:
     """Rename recognized VD_DOMAIN_* keys to the legacy lowercase names every
-    existing consumer expects. Unrecognized keys pass through unchanged."""
+    existing consumer expects. All non-coordinate indirection values pass through
+    unchanged so repository owners control their committed mapping."""
     return {_KEY_ALIASES.get(k, k): v for k, v in config.items()}
 
 
@@ -121,21 +203,31 @@ def parse_ci_config(yaml_str: str) -> dict:
         return {
             "ok": False,
             "config": _translate_config_keys(config),
-            "error": f"Unknown platform: {platform!r}. Valid values: {', '.join(sorted(_VALID_PLATFORMS))}.",
+            "error": f"Unknown platform: {platform!r}. Valid values: {', '.join(PLATFORMS)}.",
             "line_number": None,
             "missing_keys": [],
         }
 
-    required_keys = _MOTHERDUCK_REQUIRED_KEYS if platform == "motherduck" else _FABRIC_REQUIRED_KEYS
+    # platform is None (VD_DOMAIN_DATA_PLATFORM omitted) is the one deliberate
+    # exception that still defaults to Fabric's keys, matching prior behavior.
+    # Any non-None, recognized-but-unmapped platform raises KeyError rather than
+    # silently inheriting Fabric's required keys.
+    required_keys = _FABRIC_REQUIRED_KEYS if platform is None else _REQUIRED_KEYS_BY_PLATFORM[platform]
+    absent = [k for k in required_keys if k not in config]
+    blank = [k for k in required_keys if k in config and _is_blank(config[k])]
 
-    missing = [k for k in required_keys if k not in config]
-    if missing:
+    if absent or blank:
+        parts = []
+        if absent:
+            parts.append(f"Missing required keys: {absent}")
+        if blank:
+            parts.append(f"Required keys present but empty: {blank}")
         return {
             "ok": False,
             "config": _translate_config_keys(config),
-            "error": f"Missing required keys: {missing}",
+            "error": ". ".join(parts),
             "line_number": None,
-            "missing_keys": missing,
+            "missing_keys": absent + blank,
         }
 
     return {"ok": True, "config": _translate_config_keys(config), "error": None, "line_number": None, "missing_keys": []}

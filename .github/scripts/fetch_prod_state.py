@@ -2,7 +2,7 @@
 Fetch prod-state/manifest.json for Slim CI deferral (AWAP v1.4 Phase 2).
 
 Modes (from ci-config.yml prod_manifest_source.mode):
-  artifact  — download from latest successful CD run on main via gh CLI (default)
+  artifact  — download the manifests from the fixed-tag CD release via gh CLI (default)
   onelake   — download from OneLake Files path via Fabric UAMI
 
 Falls back to greenfield dbt parse when no manifest is available.
@@ -27,6 +27,10 @@ from typing import NamedTuple
 import ci_config
 import fabric_transport
 import runner_io
+# Same literal the CD publish uploads to — imported rather than restated so the
+# read and write sides cannot drift apart.
+from dbt_docs_publish import PROVENANCE_ASSET, RELEASE_TAG, manifest_release_tag
+from dbt_version_provenance import pin_install_recorded_versions
 
 
 ONELAKE_DFS = "https://onelake.dfs.fabric.microsoft.com"
@@ -44,10 +48,14 @@ ONELAKE_DFS = "https://onelake.dfs.fabric.microsoft.com"
 #
 # Categories (artifact mode):
 #   transient — gh CLI non-zero, retryable stderr, network/timeout
-#   config    — missing required key in ci-config.yml
-#   parse     — manifest absent from artifact, or invalid JSON inside it
-# (`auth` is onelake-mode-only, not reachable in artifact mode which uses the
-# repo `GITHUB_TOKEN` — see §4.2 of the design doc and OnelakeResult below.)
+#   parse     — manifest absent from the per-build release, or invalid JSON inside it, or the
+#               per-build release's provenance disagrees with the `dbt-docs-latest` pointer
+#   auth      — the release lookup 404'd and so did the repo itself (permission/visibility)
+#   version_mismatch   — the baseline's recorded dbt/adapter version could not be installed (VD-5832)
+#   provenance_missing — a manifest with no usable manifest-source.json (pre-VD-5839 baseline)
+# (`config` is onelake-mode-only since VD-4418: artifact mode reads a fixed tag and
+# has no required ci-config.yml key left to be missing.)
+# (In onelake mode `auth` is a Fabric UAMI/401/403 failure — see OnelakeResult below.)
 
 class ArtifactResult(NamedTuple):
     status: str  # "success" | "greenfield" | "error"
@@ -91,95 +99,187 @@ def write_source_json(mode: str, source: str, head_sha: str) -> None:
 
 # ─── Fetch modes ──────────────────────────────────────────────────────────────
 
-def fetch_artifact_mode(cfg: dict) -> ArtifactResult:
-    """Download manifest from the latest successful CD run on main.
+def _repo_is_visible(repo: str) -> bool:
+    """Whether the acting token can read `repo` at all.
 
-    Returns an ArtifactResult — see ArtifactResult docstring for the three
-    possible statuses and category mapping.
+    Disambiguates the 404 `gh` reports for a genuinely absent release from the 404 it
+    reports for a repo the token cannot see. A non-zero exit here is itself treated as
+    "not visible": if we cannot establish visibility we must not claim greenfield.
     """
-    workflow = cfg.get("workflow", "")
-    artifact_name = cfg.get("artifact_name", "prod-manifest")
-    main_branch = cfg.get("main_branch", "main")
+    probe = subprocess.run(
+        ["gh", "api", f"repos/{repo}", "--silent"], capture_output=True, text=True
+    )
+    return probe.returncode == 0
+
+
+def _load_valid_provenance(path: str) -> dict | None:
+    """Return the parsed provenance only if it is a dict with a non-empty string for every
+    required key; otherwise None (null, a list, a null-valued field, or an unreadable file
+    must not crash the caller or reach pin-install with a None version)."""
+    try:
+        with open(path) as f:
+            recorded = json.load(f)
+    except (ValueError, OSError):
+        return None
+    if not isinstance(recorded, dict):
+        return None
+    if not all(isinstance(recorded.get(k), str) and recorded[k] for k in _REQUIRED_PROVENANCE_KEYS):
+        return None
+    return recorded
+
+
+_REQUIRED_PROVENANCE_KEYS = ("build_sha", "dbt_version", "adapter_name", "adapter_version")
+
+
+def fetch_artifact_mode(cfg: dict) -> ArtifactResult:
+    """Fetch the prod-state baseline, pinned to the dbt/adapter version that produced it.
+
+    Returns an ArtifactResult -- see ArtifactResult docstring for the statuses and the
+    category mapping (VD-5832 adds `version_mismatch` and `provenance_missing`).
+
+    `dbt-docs-latest` is only a pointer: its asset list classifies greenfield vs.
+    provenance-missing, and its `manifest-source.json` names the `build_sha` plus the
+    recorded versions. The actual `manifest.json` is read from the immutable
+    `dbt-manifest-<build_sha>` release -- never from `dbt-docs-latest`'s mutable copy.
+    A version that cannot be installed IS the version-mismatch signal (no post-hoc compare).
+
+    The mode keeps the name `artifact` because it is the operator-facing
+    `prod_manifest_source.mode` value; only the transport underneath changed (VD-4418).
+    """
     repo = os.environ.get("REPO", "")
     head_sha = os.environ.get("HEAD_SHA", "")
 
-    if not workflow:
-        reason = "prod_manifest_source.workflow is required for artifact mode."
-        runner_io.error(reason)
-        return ArtifactResult("error", "config", reason)
-
-    result = subprocess.run(
-        [
-            "gh", "run", "list",
-            "--workflow", workflow,
-            "--branch", main_branch,
-            "--status", "success",
-            "--limit", "1",
-            "--json", "databaseId,headSha",
-            "--repo", repo,
-        ],
+    view = subprocess.run(
+        ["gh", "release", "view", RELEASE_TAG, "--json", "assets", "--repo", repo],
         capture_output=True, text=True,
     )
-    if result.returncode != 0:
-        reason = f"gh run list failed: {result.stderr.strip() or 'exit ' + str(result.returncode)}"
+    if view.returncode != 0:
+        # `gh` prints "release not found" for ANY 404 on the tag lookup, including a repo the
+        # token cannot see -- confirm repo visibility before believing it (AC-14). Both
+        # streams are checked: `gh`'s channel for CLI errors is not a documented contract.
+        combined_output = f"{view.stdout} {view.stderr}".lower()
+        if "release not found" in combined_output:
+            if not _repo_is_visible(repo):
+                reason = (
+                    f"Cannot read repository {repo} — the '{RELEASE_TAG}' release "
+                    "lookup 404'd and so did the repository itself, so this is a "
+                    "permission or visibility failure, not a missing release."
+                )
+                runner_io.warning(reason)
+                return ArtifactResult("error", "auth", reason)
+            runner_io.notice(
+                "No prod manifest published on the CD release — true "
+                "greenfield (full build)."
+            )
+            return ArtifactResult("greenfield")
+        reason = (
+            f"gh release view failed for tag {RELEASE_TAG}: "
+            f"{view.stderr.strip() or 'exit ' + str(view.returncode)}"
+        )
         runner_io.warning(reason)
         return ArtifactResult("error", "transient", reason)
 
     try:
-        runs = json.loads(result.stdout)
-    except ValueError:
-        reason = "gh run list returned invalid JSON (possible rate-limit or proxy interception)."
+        assets = {a["name"] for a in json.loads(view.stdout or "{}").get("assets", [])}
+    except (ValueError, TypeError, KeyError, AttributeError) as e:
+        reason = f"gh release view returned an unparseable asset list for '{RELEASE_TAG}': {e}"
         runner_io.warning(reason)
         return ArtifactResult("error", "transient", reason)
 
-    if not runs:
-        # The single legitimate greenfield signal: zero successful CD runs ever.
+    if "manifest.json" not in assets and PROVENANCE_ASSET not in assets:
+        # Docs-only release (a domain still on a pre-VD-4418 bundle) -- true greenfield.
         runner_io.notice(
-            "No successful CD workflow runs found on main — true greenfield "
-            "(full build)."
+            "No prod manifest published on the CD release — true "
+            "greenfield (full build)."
         )
         return ArtifactResult("greenfield")
-
-    run_id = runs[0]["databaseId"]
-    run_sha = runs[0]["headSha"]
+    if PROVENANCE_ASSET not in assets:
+        reason = (
+            f"'{RELEASE_TAG}' release has a manifest but no '{PROVENANCE_ASSET}' — "
+            "this baseline predates dbt/adapter version recording."
+        )
+        runner_io.warning(reason)
+        return ArtifactResult("error", "provenance_missing", reason)
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        dl_result = subprocess.run(
-            [
-                "gh", "run", "download", str(run_id),
-                "--name", artifact_name,
-                "--dir", tmpdir,
-                "--repo", repo,
-            ],
+        dl = subprocess.run(
+            ["gh", "release", "download", RELEASE_TAG, "--pattern", PROVENANCE_ASSET,
+             "--dir", tmpdir, "--repo", repo],
             capture_output=True, text=True,
         )
-        if dl_result.returncode != 0:
+        if dl.returncode != 0:
+            reason = f"failed to download '{PROVENANCE_ASSET}' off '{RELEASE_TAG}': {dl.stderr.strip()}"
+            runner_io.warning(reason)
+            return ArtifactResult("error", "transient", reason)
+        recorded = _load_valid_provenance(os.path.join(tmpdir, PROVENANCE_ASSET))
+    if recorded is None:
+        reason = (
+            f"'{RELEASE_TAG}' release's '{PROVENANCE_ASSET}' is malformed or incomplete "
+            f"(expected non-empty string values for {list(_REQUIRED_PROVENANCE_KEYS)})."
+        )
+        runner_io.warning(reason)
+        return ArtifactResult("error", "provenance_missing", reason)
+
+    pin = pin_install_recorded_versions(recorded)
+    if not pin.success:
+        runner_io.warning(pin.reason)
+        return ArtifactResult("error", "version_mismatch", pin.reason)
+
+    build_sha = recorded["build_sha"]
+    build_tag = manifest_release_tag(build_sha)
+    per_build_view = subprocess.run(
+        ["gh", "release", "view", build_tag, "--json", "assets", "--repo", repo],
+        capture_output=True, text=True,
+    )
+    if per_build_view.returncode != 0:
+        reason = (
+            f"'{RELEASE_TAG}' provenance names build_sha={build_sha} (release '{build_tag}'), "
+            f"but that release could not be read: "
+            f"{per_build_view.stderr.strip() or 'exit ' + str(per_build_view.returncode)}"
+        )
+        runner_io.warning(reason)
+        return ArtifactResult("error", "transient", reason)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dl = subprocess.run(
+            ["gh", "release", "download", build_tag, "--pattern", "manifest*.json",
+             "--dir", tmpdir, "--repo", repo],
+            capture_output=True, text=True,
+        )
+        if dl.returncode != 0:
             reason = (
-                f"gh run download failed for run {run_id}: "
-                f"{dl_result.stderr.strip() or 'exit ' + str(dl_result.returncode)}"
+                f"assets of '{build_tag}' (named by '{RELEASE_TAG}' provenance, "
+                f"build_sha={build_sha}) could not be downloaded: "
+                f"{dl.stderr.strip() or 'exit ' + str(dl.returncode)}"
             )
             runner_io.warning(reason)
             return ArtifactResult("error", "transient", reason)
 
         manifest_src = os.path.join(tmpdir, "manifest.json")
         if not os.path.exists(manifest_src):
-            reason = (
-                f"manifest.json not found in artifact '{artifact_name}' "
-                f"(run {run_id})."
-            )
+            reason = f"manifest.json not found on '{build_tag}' (build_sha={build_sha})."
             runner_io.warning(reason)
             return ArtifactResult("error", "parse", reason)
-
-        # Validate the manifest is parseable JSON before declaring success —
-        # downstream Slim CI will choke on a malformed file with a worse error.
         try:
             with open(manifest_src) as f:
                 json.load(f)
         except (ValueError, OSError) as e:
-            reason = f"manifest.json in artifact '{artifact_name}' is not valid JSON: {e}"
+            reason = f"manifest.json on '{build_tag}' is not valid JSON: {e}"
             runner_io.warning(reason)
             return ArtifactResult("error", "parse", reason)
 
+        # The per-build release is the source of truth: its own provenance must agree with
+        # the mutable pointer we just pinned from, or the pointer is stale/hand-edited.
+        per_build = _load_valid_provenance(os.path.join(tmpdir, PROVENANCE_ASSET))
+        if per_build is None or any(per_build[k] != recorded[k] for k in _REQUIRED_PROVENANCE_KEYS):
+            reason = (
+                f"'{build_tag}' provenance disagrees with (or is missing relative to) the "
+                f"'{RELEASE_TAG}' pointer for build_sha={build_sha} — stale or corrupted pointer."
+            )
+            runner_io.warning(reason)
+            return ArtifactResult("error", "parse", reason)
+
+        # Only now may prod-state/ exist: its presence is what makes "Show modified set" run.
         os.makedirs("prod-state", exist_ok=True)
         shutil.copy2(manifest_src, "prod-state/manifest.json")
         # Also copy prod-target manifest for --defer resolution in gates 2/4 (VD-2142).
@@ -187,12 +287,8 @@ def fetch_artifact_mode(cfg: dict) -> ArtifactResult:
         if os.path.exists(manifest_prod_src):
             shutil.copy2(manifest_prod_src, "prod-state/manifest_prod.json")
 
-    write_source_json(
-        mode="artifact",
-        source=f"{repo}/runs/{run_id} (SHA {run_sha[:8]})",
-        head_sha=head_sha,
-    )
-    print(f"Artifact manifest fetched from run {run_id} (SHA {run_sha[:8]}).", flush=True)
+    write_source_json(mode="artifact", source=f"{repo} release {build_tag}", head_sha=head_sha)
+    print(f"Prod manifest fetched from the '{build_tag}' release.", flush=True)
     return ArtifactResult("success")
 
 
@@ -291,7 +387,8 @@ def fetch_greenfield() -> None:
 
     # Diagnostic only: surface project-level errors. Output NOT used as prod manifest.
     deps = subprocess.run(
-        ["dbt", "deps", "--profiles-dir", ".github/profiles", "--target", "dbt_quality"],
+        ["dbt", "deps", "--project-dir", runner_io.project_dir(),
+         "--profiles-dir", ".github/profiles", "--target", "dbt_quality"],
         capture_output=True, text=True,
     )
     if deps.returncode != 0:
@@ -304,6 +401,7 @@ def fetch_greenfield() -> None:
     parse = subprocess.run(
         [
             "dbt", "parse",
+            "--project-dir", runner_io.project_dir(),
             "--profiles-dir", ".github/profiles",
             "--target", "dbt_quality",
             "--exclude", "package:elementary",

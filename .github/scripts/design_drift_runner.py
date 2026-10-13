@@ -1,10 +1,12 @@
 """Thin shell for ci/design-drift (MotherDuck).
 
 gather → call → dispatch:
-  1. Read design.md, manifest.json, modified.json from disk.
+  1. Read the PR's changed paths and the changed model design records (docs/design/models/**),
+     manifest.json, modified.json.
   2. Read LLM_API_KEY, LLM_API_URL, LLM_MODEL from env.
-  3. Build prompt; POST to OpenAI-compatible chat completions API; receive
-     structured JSON via tool-use.
+  3. Build prompt; POST to OpenAI-compatible chat completions API with
+     response_format=json_object; on HTTP 400 retry once without it;
+     receive structured JSON as raw message.content text.
   4. Call run_design_drift (pure).
   5. Post ci/design-drift status; sys.exit(1) on drift or error.
 
@@ -12,7 +14,7 @@ All gate logic lives in design_drift.run_design_drift; this module owns only I/O
 
 Usage:
     design_drift_runner.py \\
-        --pr-number 42 --head-sha abc123 --intent-id intent/sales \\
+        --pr-number 42 --head-sha abc123 --changed-paths changed-paths.txt \\
         --manifest target/manifest.json \\
         --modified reports/modified.json
 
@@ -30,11 +32,14 @@ import os
 import sys
 import urllib.error
 import urllib.request
+import uuid
 
 import emit_status
 import notify_render
 import pr_comment
+import design_record_io
 
+from design_records import select_design_records
 from design_drift import build_llm_prompt, run_design_drift
 
 CONTEXT = "ci/design-drift"
@@ -42,81 +47,64 @@ DEFAULT_LLM_API_URL = "https://api.openai.com"
 DEFAULT_LLM_MODEL = "gpt-4o"
 MAX_OUTPUT_TOKENS = 4096
 
-_DRIFT_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "report_design_drift",
-        "description": "Return drift findings comparing design.md against the modified dbt models.",
-        "parameters": {
-            "type": "object",
-            "required": ["has_drift", "findings"],
-            "properties": {
-                "has_drift": {"type": "boolean"},
-                "findings": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "required": ["kind", "model", "detail"],
-                        "properties": {
-                            "kind": {
-                                "type": "string",
-                                "enum": [
-                                    "missing_model", "extra_model",
-                                    "grain_mismatch", "materialization_mismatch",
-                                    "unique_key_mismatch",
-                                    "unexpected_column", "missing_column",
-                                ],
-                            },
-                            "model": {"type": "string"},
-                            "detail": {"type": "string"},
-                        },
-                    },
-                },
-            },
-        },
-    },
-}
-
 
 def _read_text(path: str) -> str:
     with open(path) as f:
         return f.read()
 
 
-def _design_md_path(intent_id: str) -> str:
-    return f"{intent_id}/design.md"
-
-
-def call_llm(api_key: str, prompt: str, api_url: str, model: str) -> dict:
-    # Support both a base URL (https://api.openai.com) and a full endpoint URL
-    # (https://api.openai.com/v1/chat/completions) — append only when needed.
+def build_llm_url(api_url: str) -> str:
+    """AC-66: build the chat-completions URL for any LLM_API_URL base-URL shape."""
     base = api_url.rstrip("/")
-    url = base if base.endswith("/v1/chat/completions") else f"{base}/v1/chat/completions"
-    body = json.dumps({
-        "model": model,
-        "max_tokens": MAX_OUTPUT_TOKENS,
-        "temperature": 0,
-        "tools": [_DRIFT_TOOL],
-        "tool_choice": {"type": "function", "function": {"name": "report_design_drift"}},
-        "messages": [{"role": "user", "content": prompt}],
-    }).encode()
-    req = urllib.request.Request(url, data=body, method="POST")
+    if base.endswith("/chat/completions"):
+        return base
+    # Databricks serves chat completions directly under /serving-endpoints (no /v1).
+    if base.endswith(("/v1", "/serving-endpoints")):
+        return f"{base}/chat/completions"
+    return f"{base}/v1/chat/completions"
+
+
+def _post_chat_completion(url: str, api_key: str, body: dict) -> dict:
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Authorization", f"Bearer {api_key}")
     req.add_header("content-type", "application/json")
     req.add_header("User-Agent", "python-httpx/0.27.0")
+    # OpenCode Zen's Go-plan gateway rejects any request lacking this header
+    # (MissingSessionID) — a fresh UUID per call satisfies it. Other
+    # OpenAI-compatible providers ignore unrecognized headers.
+    req.add_header("x-opencode-session", str(uuid.uuid4()))
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.loads(resp.read())
+
+
+def call_llm(api_key: str, prompt: str, api_url: str, model: str) -> str:
+    url = build_llm_url(api_url)
+    body = {
+        "model": model,
+        "max_tokens": MAX_OUTPUT_TOKENS,
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+        "messages": [{"role": "user", "content": prompt}],
+    }
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            payload = json.loads(resp.read())
+        payload = _post_chat_completion(url, api_key, body)
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"LLM API HTTP {e.code}: {e.read().decode(errors='replace')}") from e
+        if e.code != 400:
+            raise RuntimeError(f"LLM API HTTP {e.code}: {e.read().decode(errors='replace')}") from e
+        first_body = e.read().decode(errors="replace")
+        fallback_body = {k: v for k, v in body.items() if k != "response_format"}
+        try:
+            payload = _post_chat_completion(url, api_key, fallback_body)
+        except urllib.error.HTTPError as e2:
+            raise RuntimeError(
+                f"LLM API HTTP {e2.code} on response_format fallback retry (initial 400 was: "
+                f"{first_body}): {e2.read().decode(errors='replace')}"
+            ) from e2
     try:
-        tool_call = payload["choices"][0]["message"]["tool_calls"][0]
-        arguments = tool_call["function"]["arguments"]
-        return arguments if isinstance(arguments, dict) else json.loads(arguments)
-    except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
-        raise RuntimeError(
-            f"LLM response did not include a report_design_drift tool call: {payload}"
-        ) from e
+        return payload["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise RuntimeError(f"LLM response missing choices[0].message.content: {payload}") from e
 
 
 def _run_url() -> str:
@@ -144,7 +132,7 @@ def _post_pr_comment(pr_number: str, result: dict | None, modified_names: list[s
 
 def _summary(result: dict) -> str:
     if not result["has_drift"]:
-        return "design.md matches state:modified — no drift"
+        return "model design records match state:modified — no drift"
     kinds = sorted({f["kind"] for f in result["findings"]})
     return f"design drift detected: {', '.join(kinds)}"
 
@@ -153,26 +141,40 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pr-number", required=True)
     parser.add_argument("--head-sha", required=True)
-    parser.add_argument("--intent-id", required=True)
+    parser.add_argument("--changed-paths", required=True)
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--modified", required=True)
     args = parser.parse_args(argv)
 
     try:
-        design_text = _read_text(_design_md_path(args.intent_id))
+        changed = design_record_io.read_changed_paths(args.changed_paths)
+        records = [r for r in select_design_records(changed, design_record_io.read_contents(changed))
+                   if r.kind == "model"]
+        if not records:
+            _post(args.head_sha, "success", "no model design record changed — skipped")
+            _post_pr_comment(args.pr_number, result={"has_drift": False, "skipped": True, "findings": []})
+            return 0
+        design_text = "\n\n".join(f"<!-- {r.path} -->\n{r.text}" for r in records)
+        record_artifacts = {name for r in records for name in r.artifacts}
         manifest = json.loads(_read_text(args.manifest))
         modified_names = json.loads(_read_text(args.modified))
         api_key = os.environ["LLM_API_KEY"]
         api_url = os.environ.get("LLM_API_URL") or DEFAULT_LLM_API_URL
         model = os.environ.get("LLM_MODEL") or DEFAULT_LLM_MODEL
-        prompt = build_llm_prompt(design_text, manifest, modified_names)
-        llm_response = call_llm(api_key, prompt, api_url, model)
+        prompt = build_llm_prompt(design_text, manifest, sorted(set(modified_names) | record_artifacts))
+        llm_content = call_llm(api_key, prompt, api_url, model)
     except Exception as e:  # gather/call failure → emit failure status, exit 1
+        # Print before posting: the fake-world harness reads only stdout, and a failed status post
+        # must not replace the original diagnostic (AC-26).
+        print(f"design-drift error: {type(e).__name__}: {e}", flush=True)
         _post(args.head_sha, "failure", f"design-drift error: {type(e).__name__}: {e}")
         _post_pr_comment(args.pr_number, result=None)
         return 1
 
-    result = run_design_drift(design_text, manifest, modified_names, llm_response)
+    result = run_design_drift(design_text, manifest, modified_names, llm_content,
+                              record_artifacts=record_artifacts)
+    for finding in result["findings"]:
+        print(f"design drift: {finding['kind']} {finding['model']}: {finding['detail']}", flush=True)
     _post(args.head_sha, "failure" if result["has_drift"] else "success", _summary(result))
     _post_pr_comment(args.pr_number, result=result, modified_names=modified_names)
     return 1 if result["has_drift"] else 0

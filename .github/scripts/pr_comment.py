@@ -7,6 +7,7 @@ live with their renderers; this module is purely transport.
 Public surface:
     find_by_marker(marker, pr_number, repo) -> str | None
     upsert(marker, body, pr_number, repo) -> None
+    post_or_log(marker, body, pr_number, repo) -> None
 """
 
 import json
@@ -60,52 +61,45 @@ def upsert(marker: str, body: str, pr_number: str, repo: str) -> None:
         os.unlink(tmp_path)
 
 
-def select_trusted_comment(comments: list[dict], marker: str, trusted_author: str) -> str | None:
-    """Return the body of the last comment matching `marker` AND authored by
-    `trusted_author`, or None.
-
-    A marker-matching comment from any other account is ignored, not returned —
-    this is what prevents an untrusted PR author from forging trusted metadata
-    by posting their own marker-matching comment. Last-match-wins: if
-    `trusted_author` posts more than once, the most recent post supersedes
-    earlier ones.
+def post_or_log(marker: str, body: str, pr_number: str | None, repo: str | None) -> None:
+    """Upsert the PR comment, never raising: skips when `pr_number`/`repo` is
+    missing (e.g. a local/manual run), and logs rather than propagates if
+    `upsert` fails — a comment-post failure should never mask the caller's
+    own exit code.
     """
-    match = None
-    for comment in comments:
-        if marker not in comment.get("body", ""):
-            continue
-        if comment.get("user", {}).get("login") != trusted_author:
-            continue
-        match = comment["body"]
-    return match
+    if not pr_number or not repo:
+        return
+    try:
+        upsert(marker, body, pr_number, repo)
+    except BaseException as e:
+        print(f"Failed to post PR comment: {e}", flush=True)
 
 
-def _fetch_all_comments(pr_number: str, repo: str) -> list[dict]:
-    """Fetch every comment on a PR, paginated. Never raises: on gh failure or
-    malformed JSON, prints a warning and returns whatever was accumulated so far.
+def post_gate_comment(report_path, render_fn, marker, pr_number, repo, real_work_result=None):
+    """Load a gate's report JSON (if present) and upsert its PR comment.
+
+    `real_work_result` is the comment job's own `needs.<real-work-job>.result`
+    string ('success' | 'failure' | 'skipped' | 'cancelled'). When the report
+    is missing AND real_work_result == 'failure', the real-work job crashed
+    before it could upload a report — a distinct case from a clean upstream
+    skip, so it renders a dedicated error message instead of calling
+    render_fn(None) (which would otherwise silently reuse the "Skipped"
+    wording for a genuine in-job crash).
     """
-    comments: list[dict] = []
-    page = 1
-    while True:
-        result = subprocess.run(
-            ["gh", "api", f"repos/{repo}/issues/{pr_number}/comments",
-             "-f", f"page={page}", "-f", "per_page=100"],
-            capture_output=True, text=True,
+    result = None
+    try:
+        with open(report_path) as f:
+            result = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    if result is None and real_work_result == "failure":
+        body = (
+            f"{marker}\n## ⚠️ Gate error\n\n"
+            "The gate job failed before it could produce a report — check "
+            "the workflow run logs for the underlying error.\n"
         )
-        if result.returncode != 0:
-            print(f"Warning: failed to fetch PR comments (page {page}): {result.stderr}", file=sys.stderr)
-            return comments
-        try:
-            page_comments = json.loads(result.stdout) if result.stdout.strip() else []
-        except json.JSONDecodeError:
-            print(f"Warning: could not parse PR comments JSON (page {page}).", file=sys.stderr)
-            return comments
-        comments.extend(page_comments)
-        if len(page_comments) < 100:
-            return comments
-        page += 1
+    else:
+        body = render_fn(result)
 
-
-def find_trusted_comment(marker: str, pr_number: str, repo: str, trusted_author: str) -> str | None:
-    """Fetch all PR comments and return the trusted match for `marker`, or None."""
-    return select_trusted_comment(_fetch_all_comments(pr_number, repo), marker, trusted_author)
+    upsert(marker, body, pr_number, repo)

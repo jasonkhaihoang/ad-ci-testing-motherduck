@@ -1516,6 +1516,7 @@ jobs:
         with:
           name: deployment-manifest-${{ github.event.pull_request.head.sha }}
           path: reports/
+        continue-on-error: true
 
       - name: Compute head_sha_short
         id: sha

@@ -15,16 +15,16 @@ VD_DOMAIN_MOTHERDUCK_DATABASE: prd
 
 # GHA Variable/Secret name indirection (ADR 0018). Values here are the *names*
 # Studio provisions as repo Variables/Secrets, not domain data.
-MOTHERDUCK_TOKEN_VAR: MOTHERDUCK_TOKEN
-LLM_API_KEY_VAR: LLM_API_KEY
-LLM_API_URL_VAR: LLM_API_URL
-LLM_MODEL_VAR: LLM_MODEL
+MOTHERDUCK_TOKEN_VAR: VD_CI_MOTHERDUCK_TOKEN
+LLM_API_KEY_VAR: VD_CI_LLM_API_KEY
+LLM_API_URL_VAR: VD_CI_LLM_API_URL
+LLM_MODEL_VAR: VD_CI_LLM_MODEL
 
 # MotherDuck service token: set MOTHERDUCK_TOKEN as a GitHub Actions secret
 # (Settings -> Secrets and variables -> Actions -> Secrets) -- not in this file.
 
-# Prod-state manifest artifact -- published by publish-prod-manifest-duckdb.yml on push to main.
+# Prod-state manifest artifact -- published by publish-prod-manifest-motherduck.yml on push to main.
 VD_DOMAIN_PROD_MANIFEST_SOURCE:
   mode: artifact
-  workflow: publish-prod-manifest-duckdb.yml
+  workflow: publish-prod-manifest-motherduck.yml
   artifact_name: prod-manifest-duckdb

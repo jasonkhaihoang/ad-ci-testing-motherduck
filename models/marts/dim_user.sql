@@ -1,3 +1,4 @@
+-- VD-6788 live validation: non-empty closure
 {{ config(materialized='table') }}
 
 with users as (

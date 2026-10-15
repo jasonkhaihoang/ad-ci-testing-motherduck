@@ -1518,6 +1518,11 @@ jobs:
           path: reports/
         continue-on-error: true
 
+      - name: FAULT INJECTION (VD-6788 AC-120) — remove the manifest for Gate 4 only
+        run: |
+          mkdir -p reports
+          rm -f "reports/deployment-manifest-${{ github.event.pull_request.head.sha }}.json"
+
       - name: Compute head_sha_short
         id: sha
         run: echo "short=$(echo '${{ github.event.pull_request.head.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"

@@ -1,3 +1,4 @@
+-- VD-6788 AC-120 live validation
 {{ config(materialized='table') }}
 
 with users as (
